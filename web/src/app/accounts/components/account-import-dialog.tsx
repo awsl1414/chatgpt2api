@@ -66,23 +66,36 @@ function getSessionAccessToken(value: unknown) {
   return typeof token === "string" ? token.trim() : "";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function getCodexTokenRecord(raw: Record<string, unknown>) {
+  // Codex CLI 的 auth.json 会把 token 放在嵌套的 tokens 对象里，需要兼容两种形状
+  const nested = isRecord(raw.tokens) ? raw.tokens : {};
+  const tokenValue = raw.access_token ?? raw.accessToken ?? nested.access_token ?? nested.accessToken;
+  const token = typeof tokenValue === "string" ? tokenValue.trim() : "";
+  return { nested, token };
+}
+
 function getAccountJsonAccount(value: unknown): AccountImportPayload | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return null;
   }
-  const raw = value as Record<string, unknown>;
-  const tokenValue = raw.access_token ?? raw.accessToken;
-  const token = typeof tokenValue === "string" ? tokenValue.trim() : "";
+  const raw = value;
+  const { nested, token } = getCodexTokenRecord(raw);
   if (!token) {
     return null;
   }
 
   const payload: AccountImportPayload = {
+    ...nested,
     ...raw,
     access_token: token,
     source_type: "codex",
   };
   delete payload.accessToken;
+  delete payload.tokens;
   if (payload.type === "codex") {
     payload.export_type = "codex";
     delete payload.type;
@@ -116,23 +129,24 @@ function getAccountJsonAccounts(value: unknown): AccountImportPayload[] {
 }
 
 function getCodexAuthAccount(value: unknown): AccountImportPayload | null {
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
+  if (!isRecord(value)) {
     return null;
   }
-  const raw = value as Record<string, unknown>;
-  const tokenValue = raw.access_token ?? raw.accessToken;
-  const token = typeof tokenValue === "string" ? tokenValue.trim() : "";
+  const raw = value;
+  const { nested, token } = getCodexTokenRecord(raw);
   if (!token) {
     return null;
   }
 
   const payload: AccountImportPayload = {
+    ...nested,
     ...raw,
     access_token: token,
     export_type: "codex",
     source_type: "codex",
   };
   delete payload.accessToken;
+  delete payload.tokens;
   if (payload.type === "codex") {
     delete payload.type;
   }
