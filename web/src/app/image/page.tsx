@@ -4,7 +4,7 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { ArrowDown, History, LoaderCircle, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ImageComposer } from "@/app/image/components/image-composer";
+import { aspectFallbackForModel, ImageComposer } from "@/app/image/components/image-composer";
 import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -1160,6 +1160,21 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     toast.success("已复用这条提示词配置");
   }, []);
 
+  // 切换模型时同步校验尺寸：非 Codex 模型不支持 2K/4K 档，自动回退到同比例 1K 档
+  const handleImageModelChange = useCallback(
+    (model: ImageModel) => {
+      setImageModel(model);
+      const fallback = aspectFallbackForModel(model, imageRatio, imageTier);
+      if (fallback) {
+        setImageRatio(fallback.ratio);
+        setImageTier(fallback.tier);
+        setImageWidth(fallback.width);
+        setImageHeight(fallback.height);
+      }
+    },
+    [imageRatio, imageTier],
+  );
+
   const openLightbox = useCallback((images: ImageLightboxItem[], index: number) => {
     if (images.length === 0) {
       return;
@@ -1741,7 +1756,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             onImageWidthChange={setImageWidth}
             onImageHeightChange={setImageHeight}
             onImageQualityChange={setImageQuality}
-            onImageModelChange={setImageModel}
+            onImageModelChange={handleImageModelChange}
             onSubmit={handleSubmit}
             onPickReferenceImage={() => fileInputRef.current?.click()}
             onReferenceImageChange={handleReferenceImageChange}

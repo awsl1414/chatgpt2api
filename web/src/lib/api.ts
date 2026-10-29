@@ -6,6 +6,11 @@ export type ImageModel = string;
 export type AuthRole = "admin" | "user";
 export type ImageStorageMode = "local" | "webdav" | "both";
 
+// 对应后端 utils/helper.is_codex_image_model：codex-gpt-image-2 走 Codex 通道
+export function isCodexImageModel(model: ImageModel) {
+  return model.toLowerCase().includes("codex");
+}
+
 export type ImageStorageSettings = {
   enabled: boolean;
   mode: ImageStorageMode;

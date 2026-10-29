@@ -27,6 +27,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         n=n,
         size=size,
         quality=quality,
+        size_enabled=True,
         response_format=response_format,
         base_url=base_url,
         message_as_error=True,

@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ImageModel } from "@/lib/api";
+import { isCodexImageModel, type ImageModel } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type ImageComposerProps = {
@@ -80,6 +80,28 @@ const aspectOptions = [
 ];
 const countOptions = Array.from({ length: 10 }, (_, index) => String(index + 1));
 
+// 2K/4K 档位仅 Codex 模型支持，非 Codex 模型的宽高比选项需要置灰
+const codexExclusiveTiers = new Set(["2k", "4k"]);
+
+type AspectOption = { ratio: string; tier: string; width: string; height: string };
+
+// 切换到非 Codex 模型时，若当前档位不被支持，回退到同比例的 1K 档（无匹配则回 auto）。
+// 返回 null 表示当前尺寸无需调整。
+export function aspectFallbackForModel(
+  model: ImageModel,
+  ratio: string,
+  tier: string,
+): AspectOption | null {
+  if (isCodexImageModel(model) || !codexExclusiveTiers.has(tier)) {
+    return null;
+  }
+  return (
+    aspectOptions.find((option) => option.tier === "1k" && option.ratio === ratio) ??
+    aspectOptions.find((option) => option.tier === "auto") ??
+    null
+  );
+}
+
 export function ImageComposer({
   prompt,
   imageCount,
@@ -127,7 +149,7 @@ export function ImageComposer({
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
   const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
-  const isCodexModel = imageModel.toLowerCase().includes("codex");
+  const isCodexModel = isCodexImageModel(imageModel);
 
   useEffect(() => {
     if (!isSizeMenuOpen) {
@@ -452,7 +474,7 @@ export function ImageComposer({
                             {aspectOptions.map((option) => {
                               const active = option.ratio === imageRatio && option.tier === imageTier && option.width === imageWidth && option.height === imageHeight;
                               const Icon = option.icon;
-                              const disabled = !isCodexModel && (option.tier === "2k" || option.tier === "4k");
+                              const disabled = !isCodexModel && codexExclusiveTiers.has(option.tier);
                               return (
                                 <button
                                   key={`${option.ratio}-${option.tier}-${option.label}`}
@@ -485,6 +507,9 @@ export function ImageComposer({
                               );
                             })}
                           </div>
+                          {!isCodexModel ? (
+                            <p className="mt-2 text-xs text-stone-400">2K/4K 尺寸仅 Codex 模型支持，已置灰不可选</p>
+                          ) : null}
                         </div>
                         <div className="border-t border-stone-100 pt-3">
                           <div className="mb-2 text-sm font-medium text-stone-900">生成数量</div>

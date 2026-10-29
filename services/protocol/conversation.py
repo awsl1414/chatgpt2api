@@ -303,6 +303,9 @@ class ConversationRequest:
     n: int = 1
     size: str | None = None
     quality: str = "auto"
+    # 接口契约里明确有 size 参数时才为 True，此时才把尺寸/质量拼进提示词；
+    # 没有 size 参数的接口（如 /v1/chat/completions）保持提示词原样
+    size_enabled: bool = False
     response_format: str = "b64_json"
     base_url: str | None = None
     message_as_error: bool = False
@@ -689,12 +692,17 @@ def conversation_events(
     size: str | None = None,
     quality: str = "auto",
     thinking_effort: str = "",
+    size_enabled: bool = False,
 ) -> Iterator[dict[str, Any]]:
     normalized = normalize_messages(messages or ([{"role": "user", "content": prompt}] if prompt else []))
     image_model = is_supported_image_model(model)
     history_text = "" if image_model else assistant_history_text(normalized)
     history_messages = [] if image_model else assistant_history_messages(normalized)
-    final_prompt = prompt_with_global_system(build_image_prompt(prompt, size, quality)) if image_model else prompt
+    if image_model:
+        hinted_prompt = build_image_prompt(prompt, size, quality) if size_enabled else prompt
+        final_prompt = prompt_with_global_system(hinted_prompt)
+    else:
+        final_prompt = prompt
     payloads = backend.stream_conversation(
         messages=normalized,
         model=model,
@@ -849,6 +857,7 @@ def stream_image_outputs(
             images=request.images or [],
             size=request.size,
             quality=request.quality,
+            size_enabled=request.size_enabled,
     ):
         last = event
         if event.get("type") == "conversation.delta":

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [修复] 尺寸/质量提示仅注入契约里明确有 `size` 参数的接口（`/v1/images/generations`、`/v1/images/edits`、`/v1/responses` 图片工具）；`/v1/chat/completions` 等没有 `size` 参数的接口不再拼接该上下文。
++ [优化] 图片页 2K/4K 尺寸档位仅 Codex 模型可选：置灰选项增加提示说明，切换到非 Codex 模型时自动回退到同比例 1K 档。
+
 ## 1.8.0 - 2026-07-28
 
 + [新增] 新增默认请求上游模型名称和默认思考强度配置，支持在设置页面修改，并可通过模型名的 `-standard`、`-extended`、`-max` 后缀覆盖思考强度。

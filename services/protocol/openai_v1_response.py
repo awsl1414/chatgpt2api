@@ -440,6 +440,7 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         model=model,
         size=tool.get("size"),
         quality=str(tool.get("quality") or "auto"),
+        size_enabled=True,
         response_format="b64_json",
         images=images,
     ))
