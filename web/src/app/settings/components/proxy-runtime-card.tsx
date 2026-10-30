@@ -17,7 +17,7 @@ import {
   type ProxyRuntimeClearanceMode,
   type ProxyRuntimeEgressMode,
   type ProxyTestResult,
-} from "@/lib/api";
+} from "@/lib/api/settings";
 import { toastActionResult } from "@/lib/action-result";
 
 import { useConfigStore } from "../store/config";

@@ -45,19 +45,18 @@ import {
 import {
   deleteAccounts,
   fetchAccounts,
-  fetchModels,
   fetchRefreshProgress,
   fetchReLoginProgress,
   reLoginAccounts,
   refreshAccounts,
-  testProxy,
   updateAccount,
   type Account,
   type AccountRefreshResponse,
   type AccountStatus,
-  type Model,
   type RefreshProgressResponse,
-} from "@/lib/api";
+} from "@/lib/api/accounts";
+import { fetchModels, type Model } from "@/lib/api/models";
+import { testProxy } from "@/lib/api/settings";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
 

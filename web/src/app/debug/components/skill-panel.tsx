@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import webConfig from "@/constants/common-env";
-import { fetchSettingsConfig } from "@/lib/api";
+import { fetchSettingsConfig } from "@/lib/api/settings";
 import { getStoredAuthSession } from "@/store/auth";
 
 export function SkillPanel() {

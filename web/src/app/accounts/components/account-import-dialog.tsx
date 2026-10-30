@@ -35,7 +35,7 @@ import {
   type Account,
   type AccountImportPayload,
   type OAuthLoginStartResponse,
-} from "@/lib/api";
+} from "@/lib/api/accounts";
 import { cn } from "@/lib/utils";
 
 type ImportMethod = "menu" | "token" | "session" | "codex-auth" | "account-json" | "oauth";

@@ -1,6 +1,6 @@
 "use client";
 
-import { login } from "@/lib/api";
+import { login } from "@/lib/api/auth-keys";
 import { clearStoredAuthSession, getStoredAuthSession, setStoredAuthSession, type StoredAuthSession } from "@/store/auth";
 
 export async function getValidatedAuthSession(): Promise<StoredAuthSession | null> {

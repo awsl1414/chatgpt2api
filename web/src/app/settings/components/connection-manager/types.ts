@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 
-import type { CPAImportJob } from "@/lib/api";
+import type { CPAImportJob } from "@/lib/api/cpa";
 
 /** 浏览导入分页的候选页大小，CPA 与 Sub2API 共用 */
 export const PAGE_SIZE_OPTIONS = ["50", "100", "200"] as const;

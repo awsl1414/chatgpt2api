@@ -22,7 +22,7 @@ import {
   type BackupInclude,
   type BackupItem,
   type BackupState,
-} from "@/lib/api";
+} from "@/lib/api/backups";
 import { actionError, toastActionResult } from "@/lib/action-result";
 import { getStoredAuthKey } from "@/store/auth";
 import { useConfigStore } from "../store/config";

@@ -3,7 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { aspectFallbackForModel } from "@/app/image/components/image-composer";
-import { fetchModels, type ImageModel } from "@/lib/api";
+import { fetchModels } from "@/lib/api/models";
+import type { ImageModel } from "@/lib/api/types";
 import { clampImageCount, filterImageModels, normalizeStoredImageModel } from "@/lib/image-utils";
 import {
   IMAGE_COUNT_STORAGE_KEY,

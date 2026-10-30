@@ -13,7 +13,7 @@ import {
   updateCPAPool,
   type CPAPool,
   type CPARemoteFile,
-} from "@/lib/api";
+} from "@/lib/api/cpa";
 
 import type { ConnectionAdapter } from "./types";
 
