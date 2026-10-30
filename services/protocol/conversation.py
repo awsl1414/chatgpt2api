@@ -17,6 +17,7 @@ from services.image_storage_service import image_storage_service
 from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
+    codex_image_tool_model,
     extract_image_from_message_content,
     is_codex_image_model,
     is_supported_image_model,
@@ -1280,6 +1281,7 @@ def stream_codex_image_outputs(
         images=request.images or [],
         size=request.size,
         quality=request.quality,
+        image_model=codex_image_tool_model(request.model),
     )))
     if not images:
         raise ImageGenerationError("No image result found in response")

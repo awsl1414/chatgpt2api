@@ -2,6 +2,9 @@
 
 ## Unreleased
 
++ [优化] 设置页「默认请求上游模型名称」由手填改为下拉选择，选项来自系统缓存的上游模型目录（新增 `GET /api/upstream-models` 接口）；目录拉取失败或当前配置值不在目录中时自动回退保留原值。
++ [新增] 新增 Codex 通道图像模型 `codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`（含 plus-/team-/pro- 前缀变体）：工具层模型 ID 按公开名映射传给上游 `/backend-api/codex/responses`，`/v1/models` 按账号类型广播；图片页模型选择器展示友好名称。
++ [修复] Codex 生图顶层模型 `gpt-5.5` 已被上游拒绝（400 `model_not_found`），改为实测可用的 `gpt-6-luna`。
 + [修复] 尺寸/质量提示仅注入契约里明确有 `size` 参数的接口（`/v1/images/generations`、`/v1/images/edits`、`/v1/responses` 图片工具）；`/v1/chat/completions` 等没有 `size` 参数的接口不再拼接该上下文。
 + [优化] 图片页 2K/4K 尺寸档位仅 Codex 模型可选：置灰选项增加提示说明，切换到非 Codex 模型时自动回退到同比例 1K 档。
 

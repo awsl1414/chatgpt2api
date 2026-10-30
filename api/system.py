@@ -24,7 +24,9 @@ from services.image_service import (
 from services.image_storage_service import ImageStorageError, image_storage_service
 from services.image_tags_service import delete_tag, get_all_tags, set_tags
 from services.log_service import log_service
+from services.model_service import model_catalog_service
 from services.proxy_service import proxy_settings, test_clearance, test_proxy
+from utils.log import logger
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -161,6 +163,25 @@ def create_router(app_version: str) -> APIRouter:
             "runtime": config.get_public_proxy_runtime_settings(),
             "status": proxy_settings.get_runtime_status(),
         }
+
+    @router.get("/api/upstream-models")
+    async def get_upstream_models(authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            result = await run_in_threadpool(model_catalog_service.list_models)
+        except Exception as exc:  # noqa: BLE001 - 目录拉取失败时降级为空列表，前端回退为手填值
+            logger.warning({
+                "event": "upstream_models_failed",
+                "error_type": type(exc).__name__,
+            })
+            return {"models": []}
+        data = result.get("data")
+        models = [
+            str(item.get("id") or "").strip()
+            for item in (data or [])
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        ]
+        return {"models": sorted(set(models))}
 
     @router.post("/api/proxy/clearance/test")
     async def test_proxy_clearance_endpoint(body: ClearanceTestRequest, authorization: str | None = Header(default=None)):

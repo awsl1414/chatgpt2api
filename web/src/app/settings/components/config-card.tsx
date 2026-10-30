@@ -21,6 +21,12 @@ export function ConfigCard() {
   const logLevelOptions = ["debug", "info", "warning", "error"];
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
+  const upstreamModels = useSettingsStore((state) => state.upstreamModels);
+  // 当前配置值不在目录中时（如目录拉取失败或上游已下线该模型），把它补进选项，避免下拉框显示空白
+  const upstreamModelOptions = config?.default_upstream_model_name
+    && !upstreamModels.includes(config.default_upstream_model_name)
+    ? [config.default_upstream_model_name, ...upstreamModels]
+    : upstreamModels;
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const setRefreshAccountIntervalMinute = useSettingsStore((state) => state.setRefreshAccountIntervalMinute);
   const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
@@ -151,13 +157,28 @@ export function ConfigCard() {
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">默认请求上游模型名称</label>
-            <Input
+            <Select
               value={String(config?.default_upstream_model_name || "")}
-              onChange={(event) => setDefaultUpstreamModelName(event.target.value)}
-              placeholder="gpt-5-5"
-              className="h-10 rounded-xl border-stone-200 bg-white"
-            />
-            <p className="text-xs text-stone-500">gpt-image-2 发起图片请求时使用的上游模型名称，默认 gpt-5-5。</p>
+              onValueChange={(value) => setDefaultUpstreamModelName(value)}
+              disabled={upstreamModelOptions.length === 0}
+            >
+              <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white">
+                <SelectValue placeholder={upstreamModelOptions.length === 0 ? "暂无可用模型目录" : "选择上游模型"} />
+              </SelectTrigger>
+              <SelectContent>
+                {upstreamModelOptions.map((model) => (
+                  <SelectItem key={model} value={model}>
+                    {model}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-stone-500">
+              gpt-image-2 发起图片请求时使用的上游模型名称，选项来自系统当前可用模型目录，默认 gpt-5-5。
+              {config?.default_upstream_model_name && !upstreamModelOptions.includes(config.default_upstream_model_name)
+                ? "（当前配置值不在目录中，已自动保留为选项）"
+                : ""}
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">默认思考强度</label>
@@ -255,7 +276,7 @@ export function ConfigCard() {
               placeholder="30"
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
-            <p className="text-xs text-stone-500">单位秒，超时后点击"继续等待"额外等待的时间。</p>
+            <p className="text-xs text-stone-500">单位秒，超时后点击&ldquo;继续等待&rdquo;额外等待的时间。</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">图片二次确认等待时间</label>

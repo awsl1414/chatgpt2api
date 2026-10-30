@@ -14,12 +14,25 @@ from fastapi import HTTPException
 from services.proxy_service import proxy_settings
 from utils.log import logger
 
-BASE_IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2"}
+BASE_IMAGE_MODELS = {
+    "gpt-image-2",
+    "codex-gpt-image-2",
+    # codex/responses 工具层 2.5 模型（2026-10-30 实测有效，见逆向仓库 docs/api/codex-image.md §6）
+    "codex-gpt-image-2.5-flare",
+    "codex-gpt-image-2.5-sunburst",
+}
 IMAGE_MODEL_PLAN_TYPES = ("plus", "team", "pro")
 CODEX_IMAGE_MODEL = "codex-gpt-image-2"
+# 走 codex/responses 通道的公开模型名；对应上游工具层模型 ID = 去掉 "codex-" 前缀
+CODEX_IMAGE_PUBLIC_MODELS = {
+    "codex-gpt-image-2",
+    "codex-gpt-image-2.5-flare",
+    "codex-gpt-image-2.5-sunburst",
+}
 PREFIXED_CODEX_IMAGE_MODELS = {
-    f"{plan_type}-{CODEX_IMAGE_MODEL}"
+    f"{plan_type}-{model}"
     for plan_type in IMAGE_MODEL_PLAN_TYPES
+    for model in CODEX_IMAGE_PUBLIC_MODELS
 }
 IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS
 PUBLIC_IMAGE_MODELS = BASE_IMAGE_MODELS | PREFIXED_CODEX_IMAGE_MODELS
@@ -116,7 +129,7 @@ def split_image_model(model: object) -> tuple[str | None, str | None]:
         prefix = f"{plan_type}-"
         if normalized.startswith(prefix):
             base_model = normalized[len(prefix):]
-            if base_model == CODEX_IMAGE_MODEL:
+            if base_model in CODEX_IMAGE_PUBLIC_MODELS:
                 return plan_type, base_model
     return None, None
 
@@ -128,7 +141,15 @@ def is_supported_image_model(model: object) -> bool:
 
 def is_codex_image_model(model: object) -> bool:
     _, base_model = split_image_model(model)
-    return base_model == CODEX_IMAGE_MODEL
+    return base_model in CODEX_IMAGE_PUBLIC_MODELS
+
+
+def codex_image_tool_model(model: object) -> str:
+    """codex-gpt-image-* 公开模型名 → 上游 codex/responses 工具层模型 ID。"""
+    _, base_model = split_image_model(model)
+    if base_model is None or not base_model.startswith("codex-"):
+        return "gpt-image-2"
+    return base_model[len("codex-"):]
 
 
 def is_image_chat_request(body: dict[str, object]) -> bool:

@@ -11,6 +11,7 @@ import {
   fetchCPAPools,
   fetchBackups,
   fetchSettingsConfig,
+  fetchUpstreamModels,
   runBackupNow,
   syncImageStorage,
   startCPAImport,
@@ -253,6 +254,8 @@ type SettingsStore = {
   config: SettingsConfig | null;
   isLoadingConfig: boolean;
   isSavingConfig: boolean;
+  upstreamModels: string[];
+  isLoadingUpstreamModels: boolean;
   backups: BackupItem[];
   backupState: BackupState | null;
   isLoadingBackups: boolean;
@@ -286,6 +289,7 @@ type SettingsStore = {
 
   initialize: () => Promise<void>;
   loadConfig: () => Promise<void>;
+  loadUpstreamModels: () => Promise<void>;
   saveConfig: () => Promise<boolean>;
   loadBackups: (silent?: boolean) => Promise<void>;
   runBackup: () => Promise<void>;
@@ -347,6 +351,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   config: null,
   isLoadingConfig: true,
   isSavingConfig: false,
+  upstreamModels: [],
+  isLoadingUpstreamModels: false,
   backups: [],
   backupState: null,
   isLoadingBackups: true,
@@ -379,7 +385,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   isStartingImport: false,
 
   initialize: async () => {
-    await Promise.allSettled([get().loadConfig(), get().loadPools()]);
+    await Promise.allSettled([get().loadConfig(), get().loadPools(), get().loadUpstreamModels()]);
     const backup = get().config?.backup;
     const isConfigured = Boolean(
       String(backup?.account_id || "").trim()
@@ -406,6 +412,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       toast.error(error instanceof Error ? error.message : "加载系统配置失败");
     } finally {
       set({ isLoadingConfig: false });
+    }
+  },
+
+  loadUpstreamModels: async () => {
+    set({ isLoadingUpstreamModels: true });
+    try {
+      const data = await fetchUpstreamModels();
+      set({ upstreamModels: (data.models || []).filter(Boolean) });
+    } catch {
+      // 拉取失败时保持空列表，下拉框会回退展示当前配置值
+    } finally {
+      set({ isLoadingUpstreamModels: false });
     }
   },
 

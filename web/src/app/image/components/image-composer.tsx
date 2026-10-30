@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { isCodexImageModel, type ImageModel } from "@/lib/api";
+import { imageModelLabel, isCodexImageModel, type ImageModel } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 type ImageComposerProps = {
@@ -142,7 +142,7 @@ export function ImageComposer({
     [referenceImages],
   );
   const modelOptions = useMemo(
-    () => imageModels.map((model) => ({ value: model, label: model })),
+    () => imageModels.map((model) => ({ value: model, label: imageModelLabel(model) })),
     [imageModels],
   );
   const qualityLabel = qualityOptions.find((option) => option.value === imageQuality)?.label || "自动";
