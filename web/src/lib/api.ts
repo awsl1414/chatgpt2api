@@ -184,6 +184,20 @@ export type ThirdPartyAppsSettings = {
   };
 };
 
+// 会话补全缓存配置（后端 services/config.py get_chat_completion_cache_settings）
+export type ChatCompletionCacheSettings = {
+  enabled: boolean;
+  ttl_seconds: number;
+  max_entries: number;
+  dedupe_inflight: boolean;
+  stream_cache: boolean;
+  normalize_messages: boolean;
+  drop_adjacent_duplicates: boolean;
+  drop_assistant_history: boolean;
+};
+
+// 字段与后端 ConfigStore.get()（services/config.py）逐一对应，均为显式声明；
+// 后端新增字段时需同步补充，不允许再放回 [key: string]: unknown 索引签名
 export type SettingsConfig = {
   base_url?: string;
   global_system_prompt?: string;
@@ -200,6 +214,8 @@ export type SettingsConfig = {
   refresh_account_interval_minute?: number | string;
   image_retention_days?: number | string;
   image_poll_timeout_secs?: number | string;
+  image_poll_interval_secs?: number | string;
+  image_poll_initial_wait_secs?: number | string;
   image_account_concurrency?: number | string;
   image_parallel_generation?: boolean;
   image_settle_enabled?: boolean;
@@ -217,7 +233,7 @@ export type SettingsConfig = {
   third_party_apps?: ThirdPartyAppsSettings;
   backup?: BackupSettings;
   backup_state?: BackupState;
-  [key: string]: unknown;
+  chat_completion_cache?: ChatCompletionCacheSettings;
 };
 
 export type BackupInclude = {
