@@ -83,11 +83,11 @@ class TextProtocolRoutingTests(unittest.TestCase):
         backend = mock.Mock()
         with (
             mock.patch.object(
-                conversation.account_service,
+                openai_v1_chat_complete.account_service,
                 "get_text_access_token",
                 return_value="pro",
             ) as selector,
-            mock.patch.object(conversation, "OpenAIBackendAPI", return_value=backend),
+            mock.patch.object(openai_v1_chat_complete, "OpenAIBackendAPI", return_value=backend),
         ):
             result = conversation.text_backend("pro-only")
 
@@ -147,23 +147,23 @@ class TextProtocolRoutingTests(unittest.TestCase):
             yield {"type": "conversation.delta", "delta": "ok"}
 
         with (
-            mock.patch.object(conversation, "OpenAIBackendAPI", side_effect=lambda access_token, **_kwargs: SimpleNamespace(
+            mock.patch.object(openai_v1_chat_complete, "OpenAIBackendAPI", side_effect=lambda access_token, **_kwargs: SimpleNamespace(
                 access_token=access_token,
                 close=lambda: None,
             )),
-            mock.patch.object(conversation, "conversation_events", side_effect=fake_events),
+            mock.patch.object(openai_v1_chat_complete, "conversation_events", side_effect=fake_events),
             mock.patch.object(
-                conversation.account_service,
+                openai_v1_chat_complete.account_service,
                 "refresh_access_token",
                 return_value="bad",
             ),
-            mock.patch.object(conversation.account_service, "remove_invalid_token"),
+            mock.patch.object(openai_v1_chat_complete.account_service, "remove_invalid_token"),
             mock.patch.object(
-                conversation.account_service,
+                openai_v1_chat_complete.account_service,
                 "get_text_access_token",
                 return_value="pro",
             ) as selector,
-            mock.patch.object(conversation.account_service, "mark_text_used"),
+            mock.patch.object(openai_v1_chat_complete.account_service, "mark_text_used"),
         ):
             result = list(conversation.stream_text_deltas(initial_backend, request))
 

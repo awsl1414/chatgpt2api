@@ -6,18 +6,16 @@ from typing import Any, Iterable, Iterator
 
 from services.errors import InvalidRequestError
 from services.protocol.chat_completion_cache import cache_key, chat_completion_cache, normalize_text_messages
-from services.protocol.conversation import (
+from services.protocol.image_stream import ImageOutput, stream_image_outputs_with_pool
+from services.protocol.message_utils import (
     ConversationRequest,
-    ImageOutput,
     count_message_image_tokens,
     count_message_text_tokens,
     count_text_tokens,
     encode_images,
     normalize_messages,
-    stream_image_outputs_with_pool,
-    stream_text_deltas,
-    text_backend,
 )
+from services.protocol.openai_v1_chat_complete import stream_text_deltas, text_backend
 from services.protocol.web_search_tool import (
     WEB_SEARCH_TOOL_TYPES,
     has_unsupported_tools,

@@ -4,21 +4,19 @@ import time
 import uuid
 from typing import Any, Iterable, Iterator
 
-from services.errors import InvalidRequestError
+from services.account_service import account_service
+from services.errors import InvalidRequestError, is_token_invalid_error
+from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.chat_completion_cache import cache_key, chat_completion_cache, normalize_text_messages
-from services.protocol.conversation import (
+from services.protocol.event_parse import conversation_events
+from services.protocol.image_stream import ImageOutput, collect_image_outputs, stream_image_outputs_with_pool
+from services.protocol.message_utils import (
     ConversationRequest,
-    ImageOutput,
-    collect_image_outputs,
-    collect_text,
     count_message_image_tokens,
     count_message_text_tokens,
     count_text_tokens,
     encode_images,
     normalize_messages,
-    stream_image_outputs_with_pool,
-    stream_text_deltas,
-    text_backend,
 )
 from services.protocol.web_search_tool import (
     WEB_SEARCH_TOOL_TYPES,
@@ -314,3 +312,72 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
             messages=messages,
         ),
     )
+
+
+# —— 文本流（原 protocol/conversation.py 文本流部分迁入）——
+
+
+def text_backend(model: str = "auto") -> OpenAIBackendAPI:
+    """按模型路由取一个文本账号的 access token，构造上游 backend 客户端。"""
+    return OpenAIBackendAPI(
+        access_token=account_service.get_text_access_token(model=model),
+        account_reader=account_service,
+    )
+
+
+def stream_text_deltas(backend: OpenAIBackendAPI, request: ConversationRequest) -> Iterator[str]:
+    """流式产出文本回复增量，token 失效时自动刷新或换号重试。
+
+    - 记录已尝试的 token，全部失败时抛 RuntimeError("no available text account")；
+    - 首个增量产出前遇到 token 失效错误，则刷新 token 或从账号池换号重试；
+    - 已开始产出后不再重试，避免向调用方重复输出内容。
+    """
+    attempted_tokens: set[str] = set()
+    token = getattr(backend, "access_token", "")
+    emitted = False
+    while True:
+        if token and token in attempted_tokens:
+            raise RuntimeError("no available text account")
+        if token:
+            attempted_tokens.add(token)
+        active_backend = None
+        try:
+            active_backend = OpenAIBackendAPI(access_token=token, account_reader=account_service)
+            for event in conversation_events(
+                active_backend,
+                messages=request.messages,
+                model=request.model,
+                prompt=request.prompt,
+                thinking_effort=request.thinking_effort,
+            ):
+                if event.get("type") != "conversation.delta":
+                    continue
+                delta = str(event.get("delta") or "")
+                if delta:
+                    emitted = True
+                    yield delta
+            account_service.mark_text_used(token)
+            return
+        except Exception as exc:
+            error_message = str(exc)
+            if token and not emitted and is_token_invalid_error(error_message):
+                refreshed_token = account_service.refresh_access_token(token, force=True, event="text_stream")
+                if refreshed_token and refreshed_token != token and refreshed_token not in attempted_tokens:
+                    token = refreshed_token
+                else:
+                    account_service.remove_invalid_token(token, "text_stream")
+                    token = account_service.get_text_access_token(
+                        excluded_tokens=set(attempted_tokens),
+                        model=request.model,
+                    )
+                if token:
+                    continue
+            raise
+        finally:
+            if active_backend is not None:
+                active_backend.close()
+
+
+def collect_text(backend: OpenAIBackendAPI, request: ConversationRequest) -> str:
+    """把流式文本增量收集为完整回复文本。"""
+    return "".join(stream_text_deltas(backend, request))

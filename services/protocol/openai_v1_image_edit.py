@@ -6,14 +6,12 @@ from typing import Any, Iterator
 from PIL import Image
 
 from services.errors import ImageGenerationError
-from services.protocol.conversation import (
-    ConversationRequest,
+from services.protocol.image_stream import (
     collect_image_outputs,
-    count_text_tokens,
-    encode_images,
     stream_image_chunks,
     stream_image_outputs_with_pool,
 )
+from services.protocol.message_utils import ConversationRequest, count_text_tokens, encode_images
 from utils.image_tokens import count_image_inputs_tokens, count_image_output_items_tokens, image_usage
 
 

@@ -13,10 +13,15 @@ from api.support import resolve_web_asset, start_limited_account_watcher
 from services.backup_service import backup_service
 from services.config import config
 from services.image_service import start_image_cleanup_scheduler
+from services.image_storage_service import image_storage_service
+from services.protocol.image_stream import set_image_saver
 
 
 def create_app() -> FastAPI:
     app_version = config.app_version
+    # 存储职责剥离（审计 B-中5）：protocol 层不直接依赖存储服务，
+    # 图片落盘/上传回调由应用组装入口在此注入
+    set_image_saver(lambda data, base_url: image_storage_service.save(data, base_url).url)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
