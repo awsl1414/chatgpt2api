@@ -12,6 +12,7 @@ from typing import Any, Iterable, Iterator
 import tiktoken
 
 from services.account_service import account_service
+from services.backend.image_task import check_task_error
 from services.config import config
 from services.errors import (
     ImageContentPolicyError,
@@ -719,7 +720,7 @@ def _get_detailed_error_from_tasks(
             return ""
 
         for task in tasks:
-            is_error, error_msg, metadata = backend.check_task_error(task)
+            is_error, error_msg, metadata = check_task_error(task)
             if is_error and error_msg:
                 logger.info({
                     "event": "image_task_structured_error",
