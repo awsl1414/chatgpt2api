@@ -3,6 +3,9 @@
 ## Unreleased
 
 + [破坏性变更] 移除旧版全局代理：`config.json` 的 `proxy` 键不再生效，设置页全局代理输入框已删除，代理请改用「稳定代理运行时」（`proxy_runtime`）或账号级代理。优先级为 账号代理 > 稳定代理运行时（仅上游请求）> 显式代理 > 直连。
++ [重构] 后端大文件拆分：`services/openai_backend_api.py` 拆为 `services/backend/` 包（client / image_task / codex_image / search / editable_file / conversation_payload），`services/account_service.py` 拆为 `services/account/` 包（pool / token_refresh / password_login / progress / models），`services/protocol/conversation.py` 拆出 `message_utils`、`event_parse`、`image_stream` 等模块；异常体系统一到 `services/errors.py`，backend 与 account 的循环依赖改为构造注入解除。
++ [重构] 前端三大拆分：图片页 `page.tsx` 拆出 `lib/image-task-state`、`lib/image-task-poller` 等纯逻辑模块与 hooks，账号页拆出组件与轮询 hook，设置页 `store.ts` 按域拆分，CPA 与 `sub2api` 导入界面统一为 connection-manager 公共组件。
++ [修复] 测试体系：`pyproject.toml` 补声明 pytest 与 requests 开发依赖，live 用例统一以 `CHATGPT2API_LIVE=1` 环境变量门控，离线 `uv run pytest` 与 `uv run python -m unittest discover` 全绿。
 + [优化] 设置页「默认请求上游模型名称」由手填改为下拉选择，选项来自系统缓存的上游模型目录（新增 `GET /api/upstream-models` 接口）；目录拉取失败或当前配置值不在目录中时自动回退保留原值。
 + [新增] 新增 Codex 通道图像模型 `codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`（含 plus-/team-/pro- 前缀变体）：工具层模型 ID 按公开名映射传给上游 `/backend-api/codex/responses`，`/v1/models` 按账号类型广播；图片页模型选择器展示友好名称。
 + [修复] Codex 生图顶层模型 `gpt-5.5` 已被上游拒绝（400 `model_not_found`），改为实测可用的 `gpt-6-luna`。

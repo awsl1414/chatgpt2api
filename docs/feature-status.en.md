@@ -37,8 +37,8 @@
 | `/v1/complete` 文本补全与流式输出 | ✅  | 已实现。 |
 | 流式输出支持 | ✅  | 已实现。 |
 | 文本补全缓存与重复请求合并 | ✅  | `/v1/chat/completions` 文本链路默认启用 60 秒短缓存、流式结果回放、in-flight 请求合并和相邻重复消息清理；可通过 `chat_completion_cache` 配置关闭或调整。 |
-| 图片尺寸参数 | ❌  | 待实现。 |
+| 图片尺寸参数 | ✅  | `/v1/images/generations` 请求支持 `size` 字段，按模型尺寸门控校验。 |
 | 服务端图片 URL 缓存 | ✅  | 已实现。 |
 | `rt_token` 刷新 | ❌  | 待实现。 |
-| 代理配置功能 | ✅  | 已支持网页端配置全局 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理，并应用到出站请求。 |
-| Anthropic 协议支持 | ❌  | 待实现。 |
+| 代理配置功能 | ✅  | 通过 `proxy_runtime` 统一管理出站代理（网页端可配置），支持 WARP / FlareSolverr / Cloudflare 过墙方案；旧的全局 `proxy` 配置链已移除。 |
+| Anthropic 协议支持 | ✅  | 已实现 `POST /v1/messages`，兼容 `x-api-key` 认证与 Anthropic SSE 流式事件。 |

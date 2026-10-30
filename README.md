@@ -135,6 +135,9 @@ environment:
 - 兼容 `POST /v1/images/edits` 图片编辑接口
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
+- 兼容 Anthropic Messages 协议 `POST /v1/messages`
+- 兼容网页搜索 `POST /v1/search`
+- 支持 `POST /v1/ppt/generations`、`POST /v1/psd/generations` 异步生成可编辑文件，`GET /v1/editable-file-tasks` 查询任务状态
 - `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、
   `gpt-5-mini`
 - 支持通过 `n` 返回多张生成结果
@@ -161,8 +164,7 @@ environment:
 - 遇到 Token 失效类错误时自动剔除无效 Token
 - 定时检查限流账号并自动刷新
 - 支持密码重新登录恢复异常账号，刷新后可自动重登
-- 支持网页端配置全局 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理
-- 支持 WARP / FlareSolverr 稳定代理运行时
+- 支持网页端配置 `proxy_runtime` 出站代理（WARP / FlareSolverr / Cloudflare 过墙方案）
 - 支持搜索、筛选、批量刷新、导出、手动编辑和清理账号
 - 支持四种导入方式：本地 CPA JSON 文件导入、远程 CPA 服务器导入、`sub2api` 服务器导入、`access_token` 导入
 - 支持在设置页配置 `sub2api` 服务器，筛选并批量导入其中的 OpenAI OAuth 账号
@@ -369,6 +371,134 @@ curl http://localhost:8000/v1/responses \
 | `input`  | 输入内容；搜索使用最后一条用户文本，图片生成需能解析出提示词                                                          |
 | `tools`  | 支持 `image_generation`、`web_search`、`web_search_preview`、`web_search_preview_2025_03_11` |
 | `stream` | 已实现，但仍在测试                                                                               |
+
+<br>
+</details>
+</details>
+
+<details>
+<summary><code>POST /v1/messages</code></summary>
+<br>
+
+Anthropic Messages 协议兼容接口，支持文本对话、网页搜索工具与图片生成，流式响应为 Anthropic SSE 事件格式。
+
+```bash
+curl http://localhost:8000/v1/messages \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: <auth-key>" \
+  -H "anthropic-version: 2023-06-01" \
+  -d '{
+    "model": "auto",
+    "max_tokens": 1024,
+    "messages": [
+      {
+        "role": "user",
+        "content": "你好，请简单介绍一下你自己。"
+      }
+    ]
+  }'
+```
+
+<details>
+<summary>字段说明</summary>
+<br>
+
+| 字段                | 说明                                                         |
+|:------------------|:-----------------------------------------------------------|
+| `model`           | 文本、搜索或图片模型                                                 |
+| `messages`        | Anthropic 消息数组                                             |
+| `system`          | 可选系统提示                                                     |
+| `stream`          | 可选，`true` 时返回 Anthropic SSE 事件流（`message_start` … `message_stop`） |
+| `tools`           | 支持 `web_search` 系列工具定义                                      |
+
+认证兼容 `x-api-key` 请求头或 `Authorization: Bearer` 请求头。
+
+<br>
+</details>
+</details>
+
+<details>
+<summary><code>POST /v1/search</code></summary>
+<br>
+
+网页搜索接口：使用账号内置搜索能力返回带引用来源的搜索结果。
+
+```bash
+curl http://localhost:8000/v1/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <auth-key>" \
+  -d '{
+    "prompt": "2026 年 AI 行业最新动态"
+  }'
+```
+
+<details>
+<summary>字段说明</summary>
+<br>
+
+| 字段       | 说明                    |
+|:---------|:----------------------|
+| `prompt` | 搜索关键词或问题（必填）          |
+
+响应中附带 `_account_email` 字段标识实际执行搜索的账号。
+
+<br>
+</details>
+</details>
+
+<details>
+<summary><code>POST /v1/ppt/generations</code> / <code>POST /v1/psd/generations</code></summary>
+<br>
+
+异步生成可编辑 PPT / PSD 文件：提交任务后立即返回任务对象，后台生成完成后通过 `GET /v1/editable-file-tasks` 查询结果。
+
+```bash
+curl http://localhost:8000/v1/ppt/generations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <auth-key>" \
+  -d '{
+    "prompt": "生成一份 2026 年 Q2 电商运营复盘 PPT，商务科技风",
+    "base64_images": [],
+    "client_task_id": "my-task-1"
+  }'
+```
+
+<details>
+<summary>字段说明</summary>
+<br>
+
+| 字段                | 说明                                              |
+|:------------------|:------------------------------------------------|
+| `prompt`          | 生成要求                                            |
+| `base64_images`   | 参考图片 base64 数组；PSD 任务必须至少提供一张                   |
+| `client_task_id`  | 可选幂等 ID，重复提交返回既有任务                              |
+
+任务状态：`queued` → `running` → `success` / `failed`；成功后 `result` 中携带可下载文件地址。
+
+<br>
+</details>
+</details>
+
+<details>
+<summary><code>GET /v1/editable-file-tasks</code></summary>
+<br>
+
+查询可编辑文件任务状态。
+
+```bash
+curl "http://localhost:8000/v1/editable-file-tasks?ids=my-task-1" \
+  -H "Authorization: Bearer <auth-key>"
+```
+
+<details>
+<summary>字段说明</summary>
+<br>
+
+| 参数    | 说明                                         |
+|:------|:-------------------------------------------|
+| `ids` | 可选逗号分隔任务 ID；缺省返回当前身份的全部任务 |
+
+返回 `{"items": [...], "missing_ids": [...]}`；`items` 内含 `id`、`status`、`kind`、`created_at`、`updated_at`、`elapsed_seconds`，以及完成后的 `result` 或失败时的 `error`。
 
 <br>
 </details>
