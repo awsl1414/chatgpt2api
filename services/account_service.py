@@ -12,6 +12,8 @@ from threading import Condition, Lock, Thread
 from typing import Any, Protocol
 from urllib.parse import urlencode
 
+from curl_cffi import requests
+
 from services.config import DATA_DIR, config
 from services.errors import ModelUnavailableError, is_tls_connection_error
 from services.log_service import (
