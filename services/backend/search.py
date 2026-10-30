@@ -172,7 +172,7 @@ def extract_search_result(conversation_id: str, conversation: dict[str, Any]) ->
 
 def extract_search_sources(payload: Any) -> list[dict[str, str]]:
     sources: list[dict[str, str]] = []
-    for obj in api.walk_dicts(payload):
+    for obj in walk_dicts(payload):
         metadata = obj.get("metadata") if isinstance(obj.get("metadata"), dict) else {}
         url = clean_search_url(obj.get("url") or obj.get("link") or obj.get("source_url") or metadata.get("url"))
         if url and all(item["url"] != url for item in sources):
@@ -219,9 +219,9 @@ def find_search_value(payload: Any, key: str) -> str:
 
 def walk_dicts(payload: Any) -> list[dict[str, Any]]:
     if isinstance(payload, dict):
-        return [payload, *(item for value in payload.values() for item in api.walk_dicts(value))]
+        return [payload, *(item for value in payload.values() for item in walk_dicts(value))]
     if isinstance(payload, list):
-        return [item for value in payload for item in api.walk_dicts(value)]
+        return [item for value in payload for item in walk_dicts(value)]
     return []
 
 def clean_search_url(value: Any) -> str:

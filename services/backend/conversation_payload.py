@@ -107,7 +107,7 @@ def conversation_payload(
     """把标准 messages 构造成 web 对话请求体。"""
     payload = {
         "action": "next",
-        "messages": api.api_messages_to_conversation_messages(messages),
+        "messages": api_messages_to_conversation_messages(api, messages),
         "model": model,
         "parent_message_id": new_uuid(),
         "conversation_mode": {"kind": "primary_assistant"},
@@ -135,7 +135,7 @@ def conversation_payload(
             "screen_width": 2560,
         },
     }
-    normalized_effort = api.normalize_thinking_effort(thinking_effort or config.default_thinking_effort)
+    normalized_effort = normalize_thinking_effort(thinking_effort or config.default_thinking_effort)
     if normalized_effort:
         payload["thinking_effort"] = normalized_effort
     return payload
@@ -154,4 +154,4 @@ def image_model_settings(model: str) -> tuple[str, str]:
     model_name, separator, suffix = upstream_model.rpartition("-")
     if separator and suffix.lower() in {"standard", "extended", "max"}:
         return model_name, suffix.lower()
-    return upstream_model, api.normalize_thinking_effort(config.default_thinking_effort)
+    return upstream_model, normalize_thinking_effort(config.default_thinking_effort)

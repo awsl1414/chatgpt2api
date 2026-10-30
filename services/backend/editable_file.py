@@ -439,7 +439,7 @@ def extract_editable_message_artifacts(
         artifact = editable_artifact_from_dict(item, message_id, author_role, create_time, export_file_re)
         if artifact:
             artifacts.append(artifact)
-    for obj in api._walk_search_dicts(message):
+    for obj in walk_dicts(message):
         artifact = editable_artifact_from_dict(obj, message_id, author_role, create_time, export_file_re)
         if artifact:
             artifacts.append(artifact)
