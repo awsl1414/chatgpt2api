@@ -1,7 +1,9 @@
 "use client";
 
+import { create } from "zustand";
 import localforage from "localforage";
 
+import { pickFallbackConversationId, sortImageConversations } from "@/lib/image-utils";
 import type { ImageModel } from "@/lib/api";
 
 export type ImageConversationMode = "generate" | "edit";
@@ -203,10 +205,6 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
   };
 }
 
-function sortImageConversations(conversations: ImageConversation[]): ImageConversation[] {
-  return [...conversations].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-}
-
 function getTimestamp(value: string) {
   const time = new Date(value).getTime();
   return Number.isFinite(time) ? time : 0;
@@ -316,3 +314,99 @@ export function getImageConversationStats(conversation: ImageConversation | null
     { queued: 0, running: 0 },
   );
 }
+
+/**
+ * 图片会话 zustand store：会话列表、加载态与选中会话的唯一数据源。
+ * 组件不再维护 conversations 的 useState + ref 手工双写，读取走 hook 订阅，
+ * 命令式读取（轮询、异步 handler）走 useImageConversationsStore.getState()。
+ * 动作内同时完成状态更新与 localforage 持久化；持久化失败向上抛出由调用方 toast。
+ */
+export type ImageConversationsState = {
+  /** 会话列表，始终按 updatedAt 倒序 */
+  conversations: ImageConversation[];
+  /** 会话历史是否仍在首次加载 */
+  isLoadingHistory: boolean;
+  /** 当前选中的会话 ID；null 表示草稿（未选会话） */
+  selectedConversationId: string | null;
+  /** 整体替换会话列表（不触发持久化） */
+  setConversations: (items: ImageConversation[]) => void;
+  setLoadingHistory: (value: boolean) => void;
+  setSelectedConversationId: (id: string | null) => void;
+  /** 插入或更新单个会话（排序后写回），默认同步持久化 */
+  upsertConversation: (conversation: ImageConversation, options?: { persist?: boolean }) => Promise<void>;
+  /**
+   * 按 ID 更新单个会话：从最新状态取当前值交给 updater，updater 返回更新后的会话，
+   * 随后排序写回并默认持久化；会话不存在（如已被删除）时为 no-op。
+   */
+  updateConversation: (
+    conversationId: string,
+    updater: (current: ImageConversation) => ImageConversation,
+    options?: { persist?: boolean },
+  ) => Promise<void>;
+  /** 删除单个会话；若删除的是选中会话，自动回退选中；持久化失败时抛出 */
+  deleteConversation: (id: string) => Promise<void>;
+  /** 清空全部会话并取消选中；持久化失败时抛出 */
+  clearConversations: () => Promise<void>;
+  /** 重命名会话并刷新 updatedAt；持久化失败时抛出 */
+  renameConversation: (id: string, title: string) => Promise<void>;
+};
+
+export const useImageConversationsStore = create<ImageConversationsState>()((set, get) => ({
+  conversations: [],
+  isLoadingHistory: true,
+  selectedConversationId: null,
+
+  setConversations: (items) => {
+    set({ conversations: sortImageConversations(items) });
+  },
+
+  setLoadingHistory: (value) => {
+    set({ isLoadingHistory: value });
+  },
+
+  setSelectedConversationId: (id) => {
+    set({ selectedConversationId: id });
+  },
+
+  upsertConversation: async (conversation, options) => {
+    const nextConversations = sortImageConversations([
+      conversation,
+      ...get().conversations.filter((item) => item.id !== conversation.id),
+    ]);
+    set({ conversations: nextConversations });
+    if (options?.persist !== false) {
+      await saveImageConversation(conversation);
+    }
+  },
+
+  updateConversation: async (conversationId, updater, options) => {
+    const current = get().conversations.find((item) => item.id === conversationId);
+    if (!current) {
+      return;
+    }
+    await get().upsertConversation(updater(current), options);
+  },
+
+  deleteConversation: async (id) => {
+    const nextConversations = get().conversations.filter((item) => item.id !== id);
+    const fallbackSelectedId =
+      get().selectedConversationId === id ? pickFallbackConversationId(nextConversations) : get().selectedConversationId;
+    set({ conversations: nextConversations, selectedConversationId: fallbackSelectedId });
+    await deleteImageConversation(id);
+  },
+
+  clearConversations: async () => {
+    set({ conversations: [], selectedConversationId: null });
+    await clearImageConversations();
+  },
+
+  renameConversation: async (id, title) => {
+    const nextConversations = sortImageConversations(
+      get().conversations.map((item) =>
+        item.id === id ? { ...item, title, updatedAt: new Date().toISOString() } : item,
+      ),
+    );
+    set({ conversations: nextConversations });
+    await renameImageConversation(id, title);
+  },
+}));
