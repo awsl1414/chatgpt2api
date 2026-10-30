@@ -4,6 +4,7 @@ import base64
 import unittest
 from unittest import mock
 
+from services.backend.image_task import extract_image_tool_records
 from services.config import config
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.conversation import ImageOutput, extract_conversation_ids
@@ -104,7 +105,7 @@ class MultiImageResultTests(unittest.TestCase):
             }
         }
 
-        records = backend._extract_image_tool_records(conversation)
+        records = extract_image_tool_records(conversation)
         file_ids = [file_id for record in records for file_id in record["file_ids"]]
         sediment_ids = [sediment_id for record in records for sediment_id in record["sediment_ids"]]
 
@@ -120,7 +121,7 @@ class MultiImageResultTests(unittest.TestCase):
 
         with (
             mock.patch.dict(config.data, {"image_poll_initial_wait_secs": 0, "image_poll_interval_secs": 0.5}),
-            mock.patch("services.openai_backend_api.time.sleep", lambda _seconds: None),
+            mock.patch("services.backend.image_task.time.sleep", lambda _seconds: None),
         ):
             file_ids, sediment_ids = backend._poll_image_results("conv-1", timeout_secs=10)
 
@@ -149,7 +150,7 @@ class MultiImageResultTests(unittest.TestCase):
         backend.file_urls = {"file-one": "https://files.test/one.png"}
         backend._get_conversation = mock.Mock(side_effect=RuntimeError("poll failed"))
 
-        with mock.patch("services.openai_backend_api.time.sleep", lambda _seconds: None):
+        with mock.patch("services.backend.image_task.time.sleep", lambda _seconds: None):
             urls = backend.resolve_conversation_image_urls("conv-1", ["file-one"], [], poll=True)
 
         self.assertEqual(urls, ["https://files.test/one.png"])
