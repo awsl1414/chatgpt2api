@@ -8,7 +8,7 @@ import base64
 from services.config import config
 from services.protocol import openai_v1_chat_complete, openai_v1_response
 from services.protocol.chat_completion_cache import cache_key, chat_completion_cache
-from services.protocol.conversation import iter_conversation_payloads, sanitize_output_text
+from services.protocol.event_parse import iter_conversation_payloads, sanitize_output_text
 from services.message_image import extract_image_from_message_content
 
 

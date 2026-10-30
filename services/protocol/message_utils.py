@@ -3,7 +3,7 @@
 承载 OpenAI 兼容协议域共享的消息规范化、图片编码与 token 计数工具，
 以及图片/文本生成共用的请求模型 `ConversationRequest`。
 本模块只依赖 `services.config` / `services.message_image` / `utils`，
-不得反向依赖 `services.protocol.conversation`（facade）或其他包内模块。
+不得反向依赖 protocol 包内其他模块。
 """
 from __future__ import annotations
 

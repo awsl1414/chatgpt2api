@@ -4,7 +4,7 @@
 conversation.* 事件流（done / raw / event / delta），并维护会话状态
 （conversation_id、file_ids、sediment_ids、blocked、tool_invoked 等）。
 本模块只依赖 `message_utils` 与 `services.openai_backend_api`（类型），
-不得反向依赖 `services.protocol.conversation`（facade）。
+不得反向依赖 protocol 包内其他模块。
 """
 from __future__ import annotations
 

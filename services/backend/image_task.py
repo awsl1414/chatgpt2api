@@ -5,7 +5,7 @@
   内容政策违规检测），见 `poll_image_results`
 - `/backend-api/tasks` 结构化错误检查（`query_backend_tasks` / `check_task_error`）
 - 文件/附件下载 URL 解析（`resolve_image_urls`）与图片字节下载
-供 services.protocol.conversation 与 services.image_task_service 调用；
+供 services.protocol.image_stream 与 services.image_task_service 调用；
 需要客户端状态的函数以 `api: BackendClient` 显式声明依赖。
 """
 

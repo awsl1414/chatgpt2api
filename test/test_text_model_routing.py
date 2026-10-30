@@ -11,10 +11,10 @@ from services.errors import ModelUnavailableError
 from services.model_service import ModelRoute, model_catalog_service
 from services.protocol import (
     anthropic_v1_messages,
-    conversation,
     openai_v1_chat_complete,
     openai_v1_response,
 )
+from services.protocol.message_utils import ConversationRequest
 from services.storage.json_storage import JSONStorageBackend
 
 
@@ -89,7 +89,7 @@ class TextProtocolRoutingTests(unittest.TestCase):
             ) as selector,
             mock.patch.object(openai_v1_chat_complete, "OpenAIBackendAPI", return_value=backend),
         ):
-            result = conversation.text_backend("pro-only")
+            result = openai_v1_chat_complete.text_backend("pro-only")
 
         self.assertIs(result, backend)
         selector.assert_called_once_with(model="pro-only")
@@ -136,7 +136,7 @@ class TextProtocolRoutingTests(unittest.TestCase):
 
     def test_invalid_token_retry_keeps_requested_model_filter(self) -> None:
         initial_backend = SimpleNamespace(access_token="bad")
-        request = conversation.ConversationRequest(
+        request = ConversationRequest(
             model="pro-only",
             messages=[{"role": "user", "content": "hello"}],
         )
@@ -165,7 +165,7 @@ class TextProtocolRoutingTests(unittest.TestCase):
             ) as selector,
             mock.patch.object(openai_v1_chat_complete.account_service, "mark_text_used"),
         ):
-            result = list(conversation.stream_text_deltas(initial_backend, request))
+            result = list(openai_v1_chat_complete.stream_text_deltas(initial_backend, request))
 
         self.assertEqual(result, ["ok"])
         selector.assert_called_once_with(

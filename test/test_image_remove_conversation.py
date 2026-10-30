@@ -2,7 +2,7 @@ import threading
 import unittest
 
 from services.config import config
-from services.protocol.conversation import _remove_image_conversation_later
+from services.protocol.image_stream import _remove_image_conversation_later
 
 
 class FakeBackend:

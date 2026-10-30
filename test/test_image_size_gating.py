@@ -10,16 +10,18 @@ import unittest
 from unittest import mock
 
 from services.protocol import (
-    conversation,
     openai_v1_chat_complete,
     openai_v1_image_edit,
     openai_v1_image_generations,
     openai_v1_response,
 )
+from services.protocol.event_parse import conversation_events
+from services.protocol.image_stream import ImageOutput
+from services.protocol.message_utils import ConversationRequest, build_image_prompt
 
 
-def result_image_output(model: str) -> conversation.ImageOutput:
-    return conversation.ImageOutput(
+def result_image_output(model: str) -> ImageOutput:
+    return ImageOutput(
         kind="result",
         model=model,
         index=1,
@@ -30,13 +32,13 @@ def result_image_output(model: str) -> conversation.ImageOutput:
 
 class BuildImagePromptTests(unittest.TestCase):
     def test_appends_size_and_quality_hints(self) -> None:
-        prompt = conversation.build_image_prompt("画一只猫", "1792x1024", "high")
+        prompt = build_image_prompt("画一只猫", "1792x1024", "high")
         self.assertIn("画一只猫", prompt)
         self.assertIn("输出图片尺寸为 1792x1024。", prompt)
         self.assertIn("输出图片质量为 high。", prompt)
 
     def test_keeps_prompt_without_size(self) -> None:
-        prompt = conversation.build_image_prompt("画一只猫", None, "auto")
+        prompt = build_image_prompt("画一只猫", None, "auto")
         self.assertNotIn("输出图片尺寸", prompt)
 
 
@@ -45,7 +47,7 @@ class ConversationEventsSizeGatingTests(unittest.TestCase):
         captured: dict[str, object] = {}
         backend = mock.MagicMock()
         backend.stream_conversation.side_effect = lambda **kwargs: captured.update(kwargs) or iter([])
-        list(conversation.conversation_events(
+        list(conversation_events(
             backend,
             model=model,
             prompt="画一只猫",
@@ -89,10 +91,10 @@ class ConversationEventsSizeGatingTests(unittest.TestCase):
 class HandlerSizeEnabledTests(unittest.TestCase):
     """各接口构造 ConversationRequest 时的 size_enabled 取值。"""
 
-    def _request_from_pool(self, module, handler, body) -> conversation.ConversationRequest:
-        captured: dict[str, conversation.ConversationRequest] = {}
+    def _request_from_pool(self, module, handler, body) -> ConversationRequest:
+        captured: dict[str, ConversationRequest] = {}
 
-        def fake_pool(request: conversation.ConversationRequest):
+        def fake_pool(request: ConversationRequest):
             captured["request"] = request
             return iter([result_image_output(request.model)])
 

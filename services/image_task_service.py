@@ -13,7 +13,7 @@ from services.content_filter import request_text
 from services.log_service import LOG_TYPE_CALL, log_service
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol import openai_v1_image_edit, openai_v1_image_generations
-from services.protocol.conversation import format_image_result
+from services.protocol.image_stream import format_image_result
 
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"

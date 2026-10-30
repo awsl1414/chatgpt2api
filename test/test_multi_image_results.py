@@ -7,7 +7,8 @@ from unittest import mock
 from services.backend.image_task import extract_image_tool_records
 from services.config import config
 from services.openai_backend_api import OpenAIBackendAPI
-from services.protocol.conversation import ImageOutput, extract_conversation_ids
+from services.protocol.event_parse import extract_conversation_ids
+from services.protocol.image_stream import ImageOutput
 from services.protocol.openai_v1_response import stream_image_response
 
 

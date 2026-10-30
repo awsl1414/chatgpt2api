@@ -2,7 +2,7 @@
 
 通过 urllib 直连 codex responses SSE 端点，驱动 image_generation 工具完成
 生图/生图编辑，产出标准 responses 事件流；供
-services.protocol.conversation.stream_codex_image_outputs 消费。
+services.protocol.image_stream.stream_codex_image_outputs 消费。
 要求账号 source_type 为 codex；需要客户端状态的函数以
 `api: BackendClient` 显式声明依赖。
 """
