@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from api.image_inputs import parse_image_edit_request, read_image_sources
 from api.support import require_identity, resolve_image_base_url
 from services.content_filter import check_request, request_shape, request_text
+from services.errors import ContentFilterError
 from services.editable_file_task_service import editable_file_task_service
 from services.log_service import LoggedCall
 from services.protocol import (

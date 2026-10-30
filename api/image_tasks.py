@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 from api.image_inputs import parse_image_edit_request, read_image_sources
 from api.support import require_identity, resolve_image_base_url
 from services.content_filter import check_request
+from services.errors import ContentFilterError
 from services.image_task_service import image_task_service
 from services.log_service import LoggedCall
 
