@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from services.storage.base import StorageBackend
+from services.storage.base import StorageBackend, StorageDataError
+from utils.log import logger
 
 
 class JSONStorageBackend(StorageBackend):
@@ -22,9 +23,13 @@ class JSONStorageBackend(StorageBackend):
             return []
         try:
             data = json.loads(file_path.read_text(encoding="utf-8"))
-            return data if isinstance(data, list) else []
-        except (json.JSONDecodeError, Exception):
-            return []
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            logger.error(f"存储文件损坏，无法解析: {file_path}: {type(exc).__name__}: {exc}")
+            raise StorageDataError(str(file_path), f"{type(exc).__name__}: {exc}") from exc
+        if not isinstance(data, list):
+            logger.error(f"存储文件结构异常，期望 list 实际为 {type(data).__name__}: {file_path}")
+            raise StorageDataError(str(file_path), f"期望 list，实际为 {type(data).__name__}")
+        return data
 
     @staticmethod
     def _save_json_list(file_path: Path, items: list[dict[str, Any]]) -> None:
@@ -48,11 +53,15 @@ class JSONStorageBackend(StorageBackend):
             return []
         try:
             data = json.loads(self.auth_keys_path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, Exception):
-            return []
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+            logger.error(f"鉴权密钥文件损坏，无法解析: {self.auth_keys_path}: {type(exc).__name__}: {exc}")
+            raise StorageDataError(str(self.auth_keys_path), f"{type(exc).__name__}: {exc}") from exc
         if isinstance(data, dict):
             data = data.get("items")
-        return data if isinstance(data, list) else []
+        if not isinstance(data, list):
+            logger.error(f"鉴权密钥文件结构异常，期望 list: {self.auth_keys_path}")
+            raise StorageDataError(str(self.auth_keys_path), "期望 list（或包含 items 的 dict）")
+        return data
 
     def save_auth_keys(self, auth_keys: list[dict[str, Any]]) -> None:
         """保存鉴权密钥数据到 JSON 文件"""

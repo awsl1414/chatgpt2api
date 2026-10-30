@@ -199,7 +199,7 @@ function AccountsPageContent() {
     message: "",
     email: "",
   });
-  const progressRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollTimersRef = useRef<ReturnType<typeof setInterval>[]>([]);
   const [refreshSummary, setRefreshSummary] = useState<Record<string, number | string> | null>(null);
 
   const loadAccounts = async (silent = false) => {
@@ -241,9 +241,12 @@ function AccountsPageContent() {
     void loadAccounts();
     void loadModels();
 
-    // 清理进度条定时器
+    // 卸载时清理所有仍在运行的轮询定时器，避免组件卸载后继续发请求
     return () => {
-      if (progressRef.current) clearInterval(progressRef.current);
+      for (const timerId of pollTimersRef.current) {
+        clearInterval(timerId);
+      }
+      pollTimersRef.current = [];
     };
   }, []);
 
@@ -431,6 +434,7 @@ function AccountsPageContent() {
             reject(err);
           }
         }, 300);
+        pollTimersRef.current.push(pollTimer);
       });
 
       // 刷新完成，更新数据
@@ -468,6 +472,7 @@ function AccountsPageContent() {
               setProgress((prev) => ({ ...prev, current: reCount }));
             }
           }, 150);
+          pollTimersRef.current.push(timer);
           setTimeout(resolve, 2000);
         });
       } else {
@@ -521,6 +526,7 @@ function AccountsPageContent() {
           reject(err);
         }
       }, 500);
+      pollTimersRef.current.push(timer);
     });
   };
 
@@ -619,6 +625,7 @@ function AccountsPageContent() {
             reject(err);
           }
         }, 300);
+        pollTimersRef.current.push(pollTimer);
       });
 
       // 等待后台线程完成，再拉取最新数据

@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 
 from services.config import DATA_DIR
+from services.storage.base import StorageDataError
+from utils.log import logger
 
 TAGS_FILE = DATA_DIR / "image_tags.json"
 
@@ -15,12 +17,17 @@ def _ensure_file() -> None:
 
 
 def load_tags() -> dict[str, list[str]]:
+    """加载图片标签数据；文件损坏时抛出 StorageDataError，避免后续 save_tags 用空数据覆盖。"""
     _ensure_file()
     try:
         data = json.loads(TAGS_FILE.read_text(encoding="utf-8"))
-    except Exception:
-        return {}
-    return data if isinstance(data, dict) else {}
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        logger.error(f"图片标签文件损坏，无法解析: {TAGS_FILE}: {type(exc).__name__}: {exc}")
+        raise StorageDataError(str(TAGS_FILE), f"{type(exc).__name__}: {exc}") from exc
+    if not isinstance(data, dict):
+        logger.error(f"图片标签文件结构异常，期望 dict 实际为 {type(data).__name__}: {TAGS_FILE}")
+        raise StorageDataError(str(TAGS_FILE), f"期望 dict，实际为 {type(data).__name__}")
+    return data
 
 
 def save_tags(data: dict[str, list[str]]) -> None:

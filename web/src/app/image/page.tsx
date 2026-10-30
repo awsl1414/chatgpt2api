@@ -88,7 +88,6 @@ function parseImageSize(size: string) {
 }
 
 const activeConversationQueueIds = new Set<string>();
-let pollAbortController: AbortController | null = null;
 
 function getResultsDistanceFromBottom(element: HTMLElement) {
   return element.scrollHeight - element.scrollTop - element.clientHeight;
@@ -678,10 +677,6 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         saveScrollPositions(scrollPositionsRef.current);
       }
       activeConversationQueueIds.clear();
-      if (pollAbortController) {
-        pollAbortController.abort();
-        pollAbortController = null;
-      }
     };
   }, [loadHistory]);
 
