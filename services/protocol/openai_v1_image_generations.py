@@ -2,13 +2,12 @@ from __future__ import annotations
 
 from typing import Any, Iterator
 
-from services.protocol.conversation import (
-    ConversationRequest,
+from services.protocol.image_stream import (
     collect_image_outputs,
-    count_text_tokens,
     stream_image_chunks,
     stream_image_outputs_with_pool,
 )
+from services.protocol.message_utils import ConversationRequest, count_text_tokens
 from utils.image_tokens import count_image_output_items_tokens, image_usage
 
 
