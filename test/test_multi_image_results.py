@@ -120,7 +120,13 @@ class MultiImageResultTests(unittest.TestCase):
         ])
 
         with (
-            mock.patch.dict(config.data, {"image_poll_initial_wait_secs": 0, "image_poll_interval_secs": 0.5}),
+            mock.patch.dict(config.data, {
+                "image_poll_initial_wait_secs": 0,
+                "image_poll_interval_secs": 0.5,
+                # 显式开启 check-before-hit 与 settle，测试「两次结果一致才返回」的 settle 机制
+                "image_check_before_hit_enabled": True,
+                "image_settle_enabled": True,
+            }),
             mock.patch("services.backend.image_task.time.sleep", lambda _seconds: None),
         ):
             file_ids, sediment_ids = backend._poll_image_results("conv-1", timeout_secs=10)

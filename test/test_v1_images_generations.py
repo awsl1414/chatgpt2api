@@ -1,17 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import unittest
 
 import requests
 
-from test.utils import save_image
+from scripts.utils import save_image
 
 AUTH_KEY = "chatgpt2api"
 BASE_URL = "http://localhost:8000"
 
+# live 用例需本地运行中的服务；默认跳过，设置 CHATGPT2API_LIVE=1 后执行
+LIVE = unittest.skipUnless(
+    os.environ.get("CHATGPT2API_LIVE") == "1",
+    "live 用例需本地运行中的服务；设置 CHATGPT2API_LIVE=1 后执行",
+)
 
+
+@LIVE
 class ImageGenerationsTests(unittest.TestCase):
     def test_image_generation_http(self):
         """测试图片生成的非流式 HTTP 调用。"""

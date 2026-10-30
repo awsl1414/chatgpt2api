@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import unittest
 
@@ -11,7 +12,14 @@ from utils.helper import save_images_from_text
 AUTH_KEY = "chatgpt2api"
 BASE_URL = "http://localhost:8000"
 
+# live 用例需本地运行中的服务；默认跳过，设置 CHATGPT2API_LIVE=1 后执行
+LIVE = unittest.skipUnless(
+    os.environ.get("CHATGPT2API_LIVE") == "1",
+    "live 用例需本地运行中的服务；设置 CHATGPT2API_LIVE=1 后执行",
+)
 
+
+@LIVE
 class ChatCompletionsTests(unittest.TestCase):
     def test_text_completion_http(self):
         """测试文本对话的非流式 HTTP 调用。"""

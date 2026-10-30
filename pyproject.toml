@@ -20,7 +20,13 @@ dependencies = [
 [dependency-groups]
 dev = [
     "httpx>=0.28.1",
+    "pytest>=8.0.0",
+    "requests>=2.32.0",
 ]
+
+[tool.pytest.ini_options]
+# 仅收集 test/ 包；scripts/ 下的手动验证脚本不作为 pytest 用例
+testpaths = ["test"]
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"

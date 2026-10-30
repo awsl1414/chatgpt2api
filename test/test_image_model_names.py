@@ -5,10 +5,7 @@ codex-gpt-image-2.5-flare / codex-gpt-image-2.5-sunburst 为 codex/responses
 """
 from __future__ import annotations
 
-import os
 import unittest
-
-os.environ.setdefault("CHATGPT2API_AUTH_KEY", "test-auth")
 
 from utils.helper import (
     IMAGE_MODELS,

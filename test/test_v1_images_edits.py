@@ -1,18 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import unittest
 from pathlib import Path
 
 import requests
 
-from test.utils import save_image
+from scripts.utils import save_image
 from utils.log import logger
 
 AUTH_KEY = "chatgpt2api"
 BASE_URL = "http://localhost:8000"
 ASSETS_DIR = Path(__file__).resolve().parents[1] / "assets"
+
+# live 用例需本地运行中的服务；默认跳过，设置 CHATGPT2API_LIVE=1 后执行
+LIVE = unittest.skipUnless(
+    os.environ.get("CHATGPT2API_LIVE") == "1",
+    "live 用例需本地运行中的服务；设置 CHATGPT2API_LIVE=1 后执行",
+)
 
 
 def load_asset_bytes(name: str) -> bytes:
@@ -35,6 +42,7 @@ def summarize_chunk(chunk: dict[str, object]) -> dict[str, object]:
     }
 
 
+@LIVE
 class ImageEditsTests(unittest.TestCase):
     def test_image_edit_http(self):
         """测试图片编辑的非流式 HTTP 调用。"""

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import unittest
 from unittest import mock
 
@@ -11,6 +12,12 @@ from services.protocol import openai_v1_models
 
 AUTH_KEY = "chatgpt2api"
 BASE_URL = "http://localhost:8000"
+
+# live 用例需本地运行中的服务；默认跳过，设置 CHATGPT2API_LIVE=1 后执行
+LIVE = unittest.skipUnless(
+    os.environ.get("CHATGPT2API_LIVE") == "1",
+    "live 用例需本地运行中的服务；设置 CHATGPT2API_LIVE=1 后执行",
+)
 
 
 class ModelListTests(unittest.TestCase):
@@ -62,12 +69,14 @@ class ModelListTests(unittest.TestCase):
         self.assertNotIn("codex-gpt-image-2", ids)
         self.assertNotIn("plus-codex-gpt-image-2", ids)
 
+    @LIVE
     def test_list_models_function(self):
         """测试直接调用服务层获取模型列表。"""
         result = openai_v1_models.list_models()
         print("function result:")
         print(json.dumps(result, ensure_ascii=False, indent=2))
 
+    @LIVE
     def test_list_models_http(self):
         """测试通过 HTTP 接口获取模型列表。"""
         response = requests.get(

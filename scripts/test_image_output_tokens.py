@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test.utils import BASE_URL, load_auth_key
+from scripts.utils import BASE_URL, load_auth_key
 
 
 def main() -> None:

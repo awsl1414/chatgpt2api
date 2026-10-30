@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from test.utils import post_json, save_image
+from scripts.utils import post_json, save_image
 
 
 def main() -> None:

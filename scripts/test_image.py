@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from services.image_storage_service import image_storage_service
 from services.protocol import openai_v1_image_generations
 from services.protocol.image_stream import set_image_saver
-from test.utils import save_image
+from scripts.utils import save_image
 
 
 def main() -> None:
