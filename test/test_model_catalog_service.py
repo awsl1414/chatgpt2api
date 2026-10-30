@@ -75,7 +75,7 @@ class ModelCatalogServiceTests(unittest.TestCase):
         }
         self.catalog = ModelCatalogService(
             self.accounts,
-            backend_factory=lambda access_token="": FakeBackend(
+            backend_factory=lambda access_token="", **_kwargs: FakeBackend(
                 access_token, self.outcomes, self.calls, self.closed
             ),
             cache_ttl_seconds=300,

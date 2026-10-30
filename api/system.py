@@ -8,6 +8,7 @@ from fastapi.responses import HTMLResponse, Response, StreamingResponse
 from pydantic import BaseModel, ConfigDict
 
 from api.support import require_admin, require_identity, resolve_image_base_url
+from services.account_service import account_service
 from services.backup_service import BackupError, backup_service
 from services.config import config
 from services.image_service import (
@@ -334,8 +335,7 @@ def create_router(app_version: str) -> APIRouter:
 
     @router.get("/health", response_model=None)
     async def health_dashboard(format: str = Query(default="html")):
-        from services.account_service import account_service as acct_svc
-        stats = await run_in_threadpool(acct_svc.get_stats)
+        stats = await run_in_threadpool(account_service.get_stats)
         storage = config.get_storage_backend()
         storage_health = await run_in_threadpool(storage.health_check)
         healthy = stats["active"] > 0

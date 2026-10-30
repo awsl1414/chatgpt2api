@@ -7,7 +7,8 @@ from types import SimpleNamespace
 from unittest import mock
 
 from services.account_service import AccountService
-from services.model_service import ModelRoute, ModelUnavailableError
+from services.errors import ModelUnavailableError
+from services.model_service import ModelRoute, model_catalog_service
 from services.protocol import (
     anthropic_v1_messages,
     conversation,
@@ -22,7 +23,8 @@ class TextAccountRoutingTests(unittest.TestCase):
         self.temp_dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp_dir.cleanup)
         self.service = AccountService(
-            JSONStorageBackend(Path(self.temp_dir.name) / "accounts.json")
+            JSONStorageBackend(Path(self.temp_dir.name) / "accounts.json"),
+            model_routes=model_catalog_service,
         )
         self.service.add_account_items(
             [
@@ -145,7 +147,7 @@ class TextProtocolRoutingTests(unittest.TestCase):
             yield {"type": "conversation.delta", "delta": "ok"}
 
         with (
-            mock.patch.object(conversation, "OpenAIBackendAPI", side_effect=lambda access_token: SimpleNamespace(
+            mock.patch.object(conversation, "OpenAIBackendAPI", side_effect=lambda access_token, **_kwargs: SimpleNamespace(
                 access_token=access_token,
                 close=lambda: None,
             )),

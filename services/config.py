@@ -9,6 +9,8 @@ from pathlib import Path
 import time
 
 from services.storage.base import StorageBackend
+from services.storage.factory import create_storage_backend
+from utils.log import logger
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 DATA_DIR = BASE_DIR / "data"
@@ -649,7 +651,6 @@ class ConfigStore:
     def get_storage_backend(self) -> StorageBackend:
         """获取存储后端实例（单例）"""
         if self._storage_backend is None:
-            from services.storage.factory import create_storage_backend
             self._storage_backend = create_storage_backend(DATA_DIR)
         return self._storage_backend
 
@@ -665,3 +666,7 @@ def save_backup_state(state: dict[str, object]) -> dict[str, object]:
 
 
 config = ConfigStore(CONFIG_FILE)
+
+# 组装层注入：日志级别由 config 提供，utils.log 保持对 services 零依赖（审计 B-高6）
+logger.set_levels_provider(lambda: set(config.log_levels))
+

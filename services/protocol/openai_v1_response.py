@@ -27,7 +27,8 @@ from services.protocol.web_search_tool import (
     search_query_from_messages,
     text_with_url_citations,
 )
-from utils.helper import extract_image_from_message_content, extract_response_prompt, has_response_image_generation_tool
+from services.message_image import extract_image_from_message_content
+from utils.helper import extract_response_prompt, has_response_image_generation_tool
 from utils.image_tokens import (
     count_image_content_tokens,
     count_image_output_items_tokens,

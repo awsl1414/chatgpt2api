@@ -14,15 +14,15 @@ from dataclasses import dataclass
 from io import BytesIO
 from pathlib import Path
 from collections.abc import Callable
-from typing import Any, Dict, Iterator, Optional
+from typing import Any, Dict, Iterator, Optional, Protocol
 from urllib.parse import unquote, urlparse
 
 from curl_cffi import requests
 from PIL import Image
 
-from services.account_service import account_service
 from services.config import config
 from services.errors import (
+    CodexSourceAccountError,
     ImageContentPolicyError,
     ImagePollTimeoutError,
     ImageStreamHardTimeoutError,
@@ -37,9 +37,21 @@ from utils.helper import (
     new_uuid,
     split_image_model,
 )
+from utils.jwt import decode_jwt_payload
 from utils.log import logger
 from utils.pow import build_legacy_requirements_token, build_proof_token, parse_pow_resources
 from utils.turnstile import solve_turnstile_token
+
+
+class AccountReader(Protocol):
+    """「token → 账号元数据」的最小读取接口。
+
+    由组装层（protocol/、各 service 调用点）注入，使本模块不依赖账号池
+    实现（审计 B-高2：openai_backend_api 不再 import account_service）。
+    """
+
+    def get_account(self, access_token: str) -> dict[str, Any]:
+        ...
 
 
 @dataclass
@@ -150,18 +162,20 @@ class OpenAIBackendAPI:
     - 协议兼容转换放在 `services.protocol`
     """
 
-    def __init__(self, access_token: str = "") -> None:
+    def __init__(self, access_token: str = "", *, account_reader: AccountReader | None = None) -> None:
         """初始化后端客户端。
 
         参数：
         - `access_token`：可选。传入后表示使用已登录链路；不传则使用未登录链路。
+        - `account_reader`：可选。token → 账号元数据的读取接口，由组装层注入；
+          不传则视作匿名链路（无账号元数据，代理走全局配置）。
         """
         self.base_url = "https://chatgpt.com"
         self.client_version = DEFAULT_CLIENT_VERSION
         self.client_build_number = DEFAULT_CLIENT_BUILD_NUMBER
         self.access_token = access_token
-        self.account = account_service.get_account(self.access_token) if self.access_token else {}
-        self.account = self.account if isinstance(self.account, dict) else {}
+        account = account_reader.get_account(self.access_token) if account_reader and self.access_token else {}
+        self.account = account if isinstance(account, dict) else {}
         self.fp = self._build_fp()
         self.user_agent = self.fp["user-agent"]
         self.device_id = self.fp["oai-device-id"]
@@ -588,10 +602,9 @@ class OpenAIBackendAPI:
         }
 
     def _ensure_codex_source_account(self) -> None:
-        account = account_service.get_account(self.access_token)
-        source_type = str((account or {}).get("source_type") or "web").strip().lower()
+        source_type = str((self.account or {}).get("source_type") or "web").strip().lower()
         if source_type != "codex":
-            raise RuntimeError("codex responses endpoint requires a codex source account")
+            raise CodexSourceAccountError("codex responses endpoint requires a codex source account")
 
     @staticmethod
     def _codex_image_input(prompt: str, images: list[str]) -> list[Dict[str, Any]]:
@@ -794,8 +807,8 @@ class OpenAIBackendAPI:
             self._codex_responses_headers(),
             method="POST",
         )
-        account = account_service.get_account(self.access_token) or {}
-        token_payload = account_service._decode_jwt_payload(self.access_token)
+        account = self.account or {}
+        token_payload = decode_jwt_payload(self.access_token)
         auth_claim = token_payload.get("https://api.openai.com/auth")
         auth_claim = auth_claim if isinstance(auth_claim, dict) else {}
         tool = payload["tools"][0]

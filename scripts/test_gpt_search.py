@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from services.account_service import account_service
 from services.openai_backend_api import OpenAIBackendAPI
 
 
@@ -15,7 +16,7 @@ def main() -> None:
     PROMPT = "帮我去网上搜索关于chatgpt2api的相关项目"
     if not ACCESS_TOKEN.strip():
         raise ValueError("ACCESS_TOKEN is empty")
-    print(json.dumps(OpenAIBackendAPI(ACCESS_TOKEN).search(PROMPT), ensure_ascii=False, indent=2))
+    print(json.dumps(OpenAIBackendAPI(ACCESS_TOKEN, account_reader=account_service).search(PROMPT), ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

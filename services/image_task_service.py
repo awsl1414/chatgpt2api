@@ -11,7 +11,9 @@ from typing import Any
 from services.config import DATA_DIR, config
 from services.content_filter import request_text
 from services.log_service import LOG_TYPE_CALL, log_service
+from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol import openai_v1_image_edit, openai_v1_image_generations
+from services.protocol.conversation import format_image_result
 
 TASK_STATUS_QUEUED = "queued"
 TASK_STATUS_RUNNING = "running"
@@ -484,10 +486,7 @@ class ImageTaskService:
         started = time.time()
         backend = None
         try:
-            from services.openai_backend_api import OpenAIBackendAPI
-            from services.protocol.conversation import format_image_result
-
-            backend = OpenAIBackendAPI(proxy_url=config.proxy_url or None)
+            backend = OpenAIBackendAPI()
             file_ids, sediment_ids = backend._poll_image_results(
                 conversation_id,
                 extra_timeout_secs,

@@ -3,6 +3,7 @@ import binascii
 import json
 import logging
 import re
+from collections.abc import Callable
 from typing import Any
 
 
@@ -11,6 +12,8 @@ class Logger:
     _JSON_B64_RE = re.compile(r'("b64_json"\s*:\s*")([A-Za-z0-9+/=]+)(")')
 
     def __init__(self, name: str = "chatgpt2api") -> None:
+        # 级别来源由组装层注入（services/config），本模块对 services 保持零依赖
+        self._levels_provider: Callable[[], set[str]] | None = None
         self._logger = logging.getLogger(name)
         if not self._logger.handlers:
             handler = logging.StreamHandler()
@@ -19,10 +22,13 @@ class Logger:
         self._logger.setLevel(logging.DEBUG)
         self._logger.propagate = False
 
+    def set_levels_provider(self, provider: Callable[[], set[str]]) -> None:
+        """注入日志级别提供方（由 services/config 组装时调用）。"""
+        self._levels_provider = provider
+
     def _enabled(self, level: str) -> bool:
         try:
-            from services.config import config
-            levels = set(config.log_levels)
+            levels = self._levels_provider() if self._levels_provider else set()
         except Exception:
             levels = set()
         return level in (levels or {"info", "warning", "error"})

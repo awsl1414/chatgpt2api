@@ -23,11 +23,11 @@ from services.errors import (
     is_tls_connection_error,
 )
 from services.image_storage_service import image_storage_service
+from services.message_image import extract_image_from_message_content
 from services.openai_backend_api import OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
     codex_image_tool_model,
-    extract_image_from_message_content,
     is_codex_image_model,
     is_supported_image_model,
     split_image_model,
@@ -632,7 +632,10 @@ def conversation_events(
 
 
 def text_backend(model: str = "auto") -> OpenAIBackendAPI:
-    return OpenAIBackendAPI(access_token=account_service.get_text_access_token(model=model))
+    return OpenAIBackendAPI(
+        access_token=account_service.get_text_access_token(model=model),
+        account_reader=account_service,
+    )
 
 
 def stream_text_deltas(backend: OpenAIBackendAPI, request: ConversationRequest) -> Iterator[str]:
@@ -646,7 +649,7 @@ def stream_text_deltas(backend: OpenAIBackendAPI, request: ConversationRequest) 
             attempted_tokens.add(token)
         active_backend = None
         try:
-            active_backend = OpenAIBackendAPI(access_token=token)
+            active_backend = OpenAIBackendAPI(access_token=token, account_reader=account_service)
             for event in conversation_events(
                 active_backend,
                 messages=request.messages,
@@ -1267,7 +1270,7 @@ def _generate_single_image(
         })
         backend = None
         try:
-            backend = OpenAIBackendAPI(access_token=token)
+            backend = OpenAIBackendAPI(access_token=token, account_reader=account_service)
             if request.progress_callback:
                 backend.progress_callback = request.progress_callback
             stream_fn = stream_codex_image_outputs if is_codex_image_model(request.model) else stream_image_outputs

@@ -9,16 +9,27 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Condition, Lock, Thread
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import urlencode
 
-from services.config import config
+from services.config import DATA_DIR, config
+from services.errors import ModelUnavailableError, is_tls_connection_error
 from services.log_service import (
     LOG_TYPE_ACCOUNT,
     log_service,
 )
+from services.proxy_service import proxy_settings
+from services.remote_info import fetch_remote_info as _fetch_remote_info
 from services.storage.base import StorageBackend
 from utils.helper import anonymize_token
+from utils.jwt import decode_jwt_payload
+
+
+class ModelRouteProvider(Protocol):
+    """模型路由查询接口（由 model_catalog_service 实现，组装层注入）。"""
+
+    def route_for_model(self, model: str) -> Any:
+        ...
 
 
 class AccountService:
@@ -46,8 +57,10 @@ class AccountService:
     _relogin_progress: dict[str, dict] = {}
     _relogin_progress_lock = Lock()
 
-    def __init__(self, storage_backend: StorageBackend):
+    def __init__(self, storage_backend: StorageBackend, model_routes: ModelRouteProvider | None = None):
         self.storage = storage_backend
+        # 模型路由（model_service 组装时回填；None 表示未接入路由，显式模型不可用）
+        self.model_routes = model_routes
         self._lock = Lock()
         self._token_refresh_lock = Lock()
         self._image_slot_condition = Condition(self._lock)
@@ -58,7 +71,6 @@ class AccountService:
         self._cumulative_total = self._load_cumulative_total()
 
     def _get_cumulative_file(self) -> Path:
-        from services.config import DATA_DIR
         return DATA_DIR / ".cumulative_total"
 
     def _load_cumulative_total(self) -> int:
@@ -79,18 +91,6 @@ class AccountService:
     @staticmethod
     def _now() -> str:
         return datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-    @staticmethod
-    def _decode_jwt_payload(token: str) -> dict:
-        try:
-            payload = str(token or "").split(".")[1]
-            payload += "=" * ((4 - len(payload) % 4) % 4)
-            import base64
-            import json
-            data = json.loads(base64.urlsafe_b64decode(payload.encode("ascii")))
-            return data if isinstance(data, dict) else {}
-        except Exception:
-            return {}
 
     @staticmethod
     def _parse_time(value: object) -> datetime | None:
@@ -245,7 +245,7 @@ class AccountService:
     @staticmethod
     def _jwt_exp(access_token: str) -> int:
         try:
-            return int(AccountService._decode_jwt_payload(access_token).get("exp") or 0)
+            return int(decode_jwt_payload(access_token).get("exp") or 0)
         except (TypeError, ValueError):
             return 0
 
@@ -266,7 +266,7 @@ class AccountService:
     @classmethod
     def _token_issued_at(cls, access_token: str) -> datetime | None:
         try:
-            iat = int(cls._decode_jwt_payload(access_token).get("iat") or 0)
+            iat = int(decode_jwt_payload(access_token).get("iat") or 0)
         except (TypeError, ValueError):
             return None
         if iat <= 0:
@@ -353,9 +353,6 @@ class AccountService:
         return due_at if due_at <= now else None
 
     def _request_access_token_refresh(self, refresh_token: str, account: dict | None = None) -> dict[str, str]:
-        from curl_cffi import requests
-        from services.proxy_service import proxy_settings
-
         session = requests.Session(**proxy_settings.build_session_kwargs(account=account, impersonate="chrome110", verify=True))
         try:
             response = session.post(
@@ -809,7 +806,7 @@ class AccountService:
                 pass
             
             # 解析 JWT payload
-            jwt_payload = self._decode_jwt_payload(access_token)
+            jwt_payload = decode_jwt_payload(access_token)
             
             email_from_jwt = str(jwt_payload.get("https://api.openai.com/profile", {}).get("email") or "").strip()
             account_id_from_jwt = str(
@@ -1006,9 +1003,9 @@ class AccountService:
         requested_model = str(model or "auto").strip() or "auto"
         route = None
         if requested_model != "auto":
-            from services.model_service import model_catalog_service
-
-            route = model_catalog_service.route_for_model(requested_model)
+            if self.model_routes is None:
+                raise ModelUnavailableError(f"model catalog is unavailable, cannot route model {requested_model!r}")
+            route = self.model_routes.route_for_model(requested_model)
         with self._lock:
             candidates = [
                 token
@@ -1024,8 +1021,6 @@ class AccountService:
             if not candidates:
                 if route is None or route.allow_anonymous:
                     return ""
-                from services.model_service import ModelUnavailableError
-
                 raise ModelUnavailableError(
                     f"model {requested_model!r} is not available to any active account"
                 )
@@ -1338,47 +1333,17 @@ class AccountService:
         event: str = "fetch_remote_info",
         defer_invalid_removal: bool = True,
     ) -> dict[str, Any] | None:
-        if not access_token:
-            raise ValueError("access_token is required")
+        """委托 services.remote_info.fetch_remote_info。
 
-        active_token = self.refresh_access_token(access_token, event=f"{event}:preflight") or access_token
-        try:
-            from services.openai_backend_api import InvalidAccessTokenError, OpenAIBackendAPI
-            backend = OpenAIBackendAPI(active_token)
-            try:
-                result = backend.get_user_info()
-            finally:
-                backend.close()
-        except InvalidAccessTokenError as exc:
-            refreshed_token = self.refresh_access_token(active_token, force=True, event=f"{event}:invalid_access_token")
-            if refreshed_token and refreshed_token != active_token:
-                try:
-                    backend = OpenAIBackendAPI(refreshed_token)
-                    try:
-                        result = backend.get_user_info()
-                    finally:
-                        backend.close()
-                except InvalidAccessTokenError as retry_exc:
-                    if self._record_invalid_token_seen(
-                        refreshed_token,
-                        event,
-                        str(retry_exc),
-                        defer_invalid_removal=defer_invalid_removal,
-                    ):
-                        self.remove_invalid_token(refreshed_token, event)
-                    raise
-                active_token = refreshed_token
-            else:
-                if self._record_invalid_token_seen(
-                    active_token,
-                    event,
-                    str(exc),
-                    defer_invalid_removal=defer_invalid_removal,
-                ):
-                    self.remove_invalid_token(active_token, event)
-                raise
-        self._record_refresh_success(active_token)
-        return self.update_account(active_token, result)
+        编排逻辑已上移出账号层（审计 B-高2），此处保留入口以维持既有
+        调用方与测试注入方式不变。
+        """
+        return _fetch_remote_info(
+            self,
+            access_token,
+            event=event,
+            defer_invalid_removal=defer_invalid_removal,
+        )
 
     # ---- 刷新进度追踪 ----
 
@@ -1517,7 +1482,6 @@ class AccountService:
                 except Exception as exc:
                     error_str = str(exc)
                     # TLS/代理连接错误是网络问题，不计入账号失败
-                    from services.protocol.conversation import is_tls_connection_error
                     if not is_tls_connection_error(error_str):
                         errors.append({"token": anonymize_token(token), "error": error_str})
                 else:
@@ -1645,8 +1609,8 @@ class AccountService:
             if not access_token or not refresh_token or not id_token:
                 continue
 
-            access_payload = self._decode_jwt_payload(access_token)
-            id_payload = self._decode_jwt_payload(id_token)
+            access_payload = decode_jwt_payload(access_token)
+            id_payload = decode_jwt_payload(id_token)
             auth_claim = access_payload.get("https://api.openai.com/auth")
             auth_claim = auth_claim if isinstance(auth_claim, dict) else {}
             profile_claim = access_payload.get("https://api.openai.com/profile")

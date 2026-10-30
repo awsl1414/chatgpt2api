@@ -9,7 +9,7 @@ from services.config import config
 from services.protocol import openai_v1_chat_complete, openai_v1_response
 from services.protocol.chat_completion_cache import cache_key, chat_completion_cache
 from services.protocol.conversation import iter_conversation_payloads, sanitize_output_text
-from utils.helper import extract_image_from_message_content
+from services.message_image import extract_image_from_message_content
 
 
 PNG_1X1 = base64.b64decode(

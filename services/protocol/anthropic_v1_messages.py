@@ -111,7 +111,10 @@ def message_request(body: dict[str, Any]) -> MessageRequest:
     payload = preprocess_payload(dict(body))
     model = str(payload.get("model") or "auto").strip() or "auto"
     return MessageRequest(
-        backend=OpenAIBackendAPI(access_token=account_service.get_text_access_token(model=model)),
+        backend=OpenAIBackendAPI(
+            access_token=account_service.get_text_access_token(model=model),
+            account_reader=account_service,
+        ),
         messages=normalize_messages(payload.get("messages"), payload.get("system")),
         model=model,
         tools=payload.get("tools"),

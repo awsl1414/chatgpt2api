@@ -243,3 +243,16 @@ class Sub2apiError(DomainError):
     """sub2api 服务器登录、拉取或导入失败。"""
 
     status_code = 502
+
+
+class CodexSourceAccountError(DomainError):
+    """codex /responses 通道要求 codex 来源账号而实际不是（保持 502 兼容既有对外响应）。"""
+
+    status_code = 502
+
+
+class ModelUnavailableError(DomainError):
+    """请求的模型没有任何可用账号支撑。"""
+
+    status_code = 502
+

@@ -8,6 +8,7 @@ from threading import RLock
 from typing import Any
 
 from services.account_service import AccountService, account_service
+from services.errors import ModelUnavailableError
 from services.openai_backend_api import OpenAIBackendAPI
 from utils.log import logger
 
@@ -16,10 +17,6 @@ from utils.log import logger
 class ModelRoute:
     account_types: frozenset[str]
     allow_anonymous: bool = False
-
-
-class ModelUnavailableError(RuntimeError):
-    pass
 
 
 class ModelCatalogService:
@@ -75,7 +72,7 @@ class ModelCatalogService:
         )
 
     def _fetch_models(self, access_token: str = "") -> dict[str, dict[str, Any]]:
-        backend = self._backend_factory(access_token=access_token)
+        backend = self._backend_factory(access_token=access_token, account_reader=self._accounts)
         try:
             return self._model_map(backend.list_models())
         finally:
@@ -180,3 +177,5 @@ class ModelCatalogService:
 
 
 model_catalog_service = ModelCatalogService(account_service)
+# 组装层回填：账号池选路时按模型路由过滤（打破 account_service -> model_service 环）
+account_service.model_routes = model_catalog_service

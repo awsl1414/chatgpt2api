@@ -28,7 +28,8 @@ from services.protocol.web_search_tool import (
     search_query_from_messages,
     text_with_url_citations,
 )
-from utils.helper import build_chat_image_markdown_content, extract_chat_image, extract_chat_prompt, is_image_chat_request, parse_image_count
+from services.message_image import extract_chat_image, parse_image_count
+from utils.helper import build_chat_image_markdown_content, extract_chat_prompt, is_image_chat_request
 from utils.image_tokens import (
     chat_usage_from_image_usage,
     count_image_inputs_tokens,
