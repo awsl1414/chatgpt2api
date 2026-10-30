@@ -3,9 +3,9 @@ from __future__ import annotations
 import re
 
 from curl_cffi import requests
-from fastapi import HTTPException
 
 from services.config import config
+from services.errors import ContentRejectedError, ReviewConfigError, ReviewUnavailableError
 from services.proxy_service import proxy_settings
 from utils.log import logger
 
@@ -154,7 +154,7 @@ def check_request(text: str) -> None:
     # Local sensitive-word match runs on the raw text (cheap, no network).
     for word in config.sensitive_words:
         if word in text:
-            raise HTTPException(status_code=400, detail={"error": "检测到敏感词，拒绝本次任务"})
+            raise ContentRejectedError("检测到敏感词，拒绝本次任务")
     review = config.ai_review
     if not review.get("enabled"):
         return
@@ -162,7 +162,7 @@ def check_request(text: str) -> None:
     api_key = str(review.get("api_key") or "").strip()
     model = str(review.get("model") or "").strip()
     if not base_url or not api_key or not model:
-        raise HTTPException(status_code=400, detail={"error": "ai review config is incomplete"})
+        raise ReviewConfigError("ai review config is incomplete")
 
     fail_open = _resolve_fail_open(review)
 
@@ -184,10 +184,7 @@ def check_request(text: str) -> None:
     def _on_failure(event_payload: dict) -> None:
         logger.warning(event_payload)
         if not fail_open:
-            raise HTTPException(
-                status_code=503,
-                detail={"error": "AI 审核服务暂时不可用，请稍后重试"},
-            )
+            raise ReviewUnavailableError("AI 审核服务暂时不可用，请稍后重试")
 
     try:
         response = requests.post(
@@ -232,7 +229,7 @@ def check_request(text: str) -> None:
     if _is_allow_decision(decision):
         return
     if _is_reject_decision(decision):
-        raise HTTPException(status_code=400, detail={"error": "AI 审核未通过，拒绝本次任务"})
+        raise ContentRejectedError("AI 审核未通过，拒绝本次任务")
     # Ambiguous decisions (e.g. "MAYBE", empty content) fall back to fail-open policy.
     _on_failure({
         "event": "ai_review_ambiguous_decision",

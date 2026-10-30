@@ -11,18 +11,14 @@ from threading import Lock
 from urllib.parse import quote, urlparse
 
 from curl_cffi import requests
-from fastapi import HTTPException
 from PIL import Image
 
 from services.config import DATA_DIR, config
+from services.errors import ImageStorageError, NotFoundError
 
 IMAGE_INDEX_FILE = DATA_DIR / "image_index.json"
 IMAGE_INDEX_LOCK = Lock()
 IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".webp"}
-
-
-class ImageStorageError(RuntimeError):
-    pass
 
 
 @dataclass(frozen=True)
@@ -44,10 +40,10 @@ def _now_iso() -> str:
 def _safe_relative_path(path: str) -> str:
     value = str(path or "").strip().replace("\\", "/").lstrip("/")
     if not value:
-        raise HTTPException(status_code=404, detail="image not found")
+        raise NotFoundError("image not found")
     parts = Path(value).parts
     if any(part in {"", ".", ".."} for part in parts):
-        raise HTTPException(status_code=404, detail="image not found")
+        raise NotFoundError("image not found")
     return Path(*parts).as_posix()
 
 
@@ -62,7 +58,7 @@ def _image_dimensions(payload: bytes) -> tuple[int, int] | None:
 def _is_image_rel(path: str) -> bool:
     try:
         safe_rel = _safe_relative_path(path)
-    except HTTPException:
+    except NotFoundError:
         return False
     return Path(safe_rel).suffix.lower() in IMAGE_EXTENSIONS
 
@@ -74,7 +70,7 @@ def _local_image_path(relative_path: str) -> Path:
     try:
         path.relative_to(root)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="image not found") from exc
+        raise NotFoundError("image not found") from exc
     return path
 
 
@@ -246,14 +242,14 @@ class ImageStorageService:
     def get_bytes(self, rel: str) -> bytes:
         safe_rel = _safe_relative_path(rel)
         if not _is_image_rel(safe_rel):
-            raise HTTPException(status_code=404, detail="image not found")
+            raise NotFoundError("image not found")
         path = _local_image_path(safe_rel)
         if path.is_file():
             return path.read_bytes()
         item = self._load_clean_index().get(safe_rel, {})
         if item.get("webdav"):
             return WebDAVClient(self.settings()).get(safe_rel)
-        raise HTTPException(status_code=404, detail="image not found")
+        raise NotFoundError("image not found")
 
     def exists(self, rel: str) -> bool:
         safe_rel = _safe_relative_path(rel)

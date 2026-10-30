@@ -22,6 +22,12 @@ from PIL import Image
 
 from services.account_service import account_service
 from services.config import config
+from services.errors import (
+    ImageContentPolicyError,
+    ImagePollTimeoutError,
+    ImageStreamHardTimeoutError,
+    InvalidAccessTokenError,
+)
 from services.proxy_service import proxy_settings
 from utils.helper import (
     CODEX_IMAGE_PUBLIC_MODELS,
@@ -34,32 +40,6 @@ from utils.helper import (
 from utils.log import logger
 from utils.pow import build_legacy_requirements_token, build_proof_token, parse_pow_resources
 from utils.turnstile import solve_turnstile_token
-
-
-class InvalidAccessTokenError(RuntimeError):
-    pass
-
-
-class ImageTaskError(RuntimeError):
-    """图片生成异常基类，携带上游会话 ID 供调用方清理对话。"""
-
-    def __init__(self, message: str = "", conversation_id: str = "") -> None:
-        super().__init__(message)
-        self.conversation_id = conversation_id
-
-
-class ImagePollTimeoutError(ImageTaskError):
-    pass
-
-
-class ImageContentPolicyError(ImageTaskError):
-    """Raised when image generation is blocked by content policy moderation."""
-    pass
-
-
-class ImageStreamHardTimeoutError(RuntimeError):
-    """图片 SSE 流读取超过硬上限时抛出，用于快速中断被挂起的长连接。"""
-    pass
 
 
 @dataclass

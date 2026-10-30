@@ -7,11 +7,11 @@ import time
 import zipfile
 from pathlib import Path
 
-from fastapi import HTTPException
 from fastapi.responses import FileResponse, Response
 from PIL import Image, ImageOps
 
 from services.config import config
+from services.errors import DomainError, NotFoundError, ThumbnailCreationError
 from services.image_storage_service import image_storage_service
 from services.image_tags_service import load_tags, remove_tags
 from utils.log import logger
@@ -30,10 +30,10 @@ def _cleanup_empty_dirs(root: Path) -> None:
 def _safe_relative_path(path: str) -> str:
     value = str(path or "").strip().replace("\\", "/").lstrip("/")
     if not value:
-        raise HTTPException(status_code=404, detail="image not found")
+        raise NotFoundError("image not found")
     parts = Path(value).parts
     if any(part in {"", ".", ".."} for part in parts):
-        raise HTTPException(status_code=404, detail="image not found")
+        raise NotFoundError("image not found")
     return Path(*parts).as_posix()
 
 
@@ -44,9 +44,9 @@ def _safe_image_path(relative_path: str) -> Path:
     try:
         path.relative_to(root)
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail="image not found") from exc
+        raise NotFoundError("image not found") from exc
     if not path.is_file():
-        raise HTTPException(status_code=404, detail="image not found")
+        raise NotFoundError("image not found")
     return path
 
 
@@ -97,10 +97,10 @@ def ensure_thumbnail(relative_path: str) -> Path:
                 image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
             image.thumbnail(THUMBNAIL_SIZE, Image.Resampling.LANCZOS)
             image.save(target, format="PNG", optimize=True)
-    except HTTPException:
+    except DomainError:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=422, detail="failed to create thumbnail") from exc
+        raise ThumbnailCreationError("failed to create thumbnail") from exc
     return target
 
 
@@ -191,42 +191,6 @@ def delete_images(paths: list[str] | None = None, start_date: str = "", end_date
     return {"removed": removed}
 
 
-def download_images_zip(paths: list[str]) -> io.BytesIO:
-    root = config.images_dir.resolve()
-    buf = io.BytesIO()
-    added = 0
-    used_names: set[str] = set()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        for item in paths:
-            rel = _safe_relative_path(item)
-            path = (root / rel).resolve()
-            payload: bytes | None = None
-            try:
-                path.relative_to(root)
-            except ValueError:
-                continue
-            if path.is_file():
-                payload = path.read_bytes()
-            else:
-                try:
-                    payload = image_storage_service.get_bytes(rel)
-                except Exception:
-                    continue
-            name = path.name
-            if name in used_names:
-                stem = path.stem
-                suffix = path.suffix
-                counter = 2
-                while f"{stem}_{counter}{suffix}" in used_names:
-                    counter += 1
-                name = f"{stem}_{counter}{suffix}"
-            used_names.add(name)
-            zf.writestr(name, payload)
-            added += 1
-    if added == 0:
-        raise HTTPException(status_code=404, detail="no images found")
-    buf.seek(0)
-    return buf
 def storage_stats() -> dict:
     import shutil
     usage = shutil.disk_usage(config.images_dir)
@@ -344,7 +308,7 @@ def download_images_zip(paths: list[str]) -> io.BytesIO:
             zf.write(path, name)
             added += 1
     if added == 0:
-        raise HTTPException(status_code=404, detail="no images found")
+        raise NotFoundError("no images found")
     buf.seek(0)
     return buf
 

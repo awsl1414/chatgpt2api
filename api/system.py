@@ -21,7 +21,8 @@ from services.image_service import (
     list_images,
     storage_stats,
 )
-from services.image_storage_service import ImageStorageError, image_storage_service
+from services.errors import ImageStorageError
+from services.image_storage_service import image_storage_service
 from services.image_tags_service import delete_tag, get_all_tags, set_tags
 from services.log_service import log_service
 from services.model_service import model_catalog_service

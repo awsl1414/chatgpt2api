@@ -30,7 +30,7 @@ def _parse_task_ids(value: str) -> list[str]:
 async def filter_or_log(call: LoggedCall, text: str) -> None:
     try:
         await run_in_threadpool(check_request, text)
-    except HTTPException as exc:
+    except ContentFilterError as exc:
         call.log("调用失败", status="failed", error=str(exc.detail))
         raise
 

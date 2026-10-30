@@ -14,6 +14,7 @@ from curl_cffi.requests import Session
 
 from services.account_service import account_service
 from services.config import DATA_DIR
+from services.errors import Sub2apiError
 
 
 SUB2API_CONFIG_FILE = DATA_DIR / "sub2api_config.json"
@@ -192,18 +193,18 @@ def _login(base_url: str, email: str, password: str) -> tuple[str, float]:
             timeout=30,
         )
         if not response.ok:
-            raise RuntimeError(f"sub2api login failed: HTTP {response.status_code} {response.text[:200]}")
+            raise Sub2apiError(f"sub2api login failed: HTTP {response.status_code} {response.text[:200]}")
         payload = response.json()
     finally:
         session.close()
 
     body = _unwrap_envelope(payload)
     if not isinstance(body, dict):
-        raise RuntimeError("sub2api login payload is invalid")
+        raise Sub2apiError("sub2api login payload is invalid")
 
     token = _clean(body.get("access_token"))
     if not token:
-        raise RuntimeError("sub2api login did not return access_token")
+        raise Sub2apiError("sub2api login did not return access_token")
 
     expires_in = int(body.get("expires_in") or 3600)
     expires_at = time.time() + max(60, expires_in) - _TOKEN_REFRESH_SKEW
@@ -218,7 +219,7 @@ def _auth_headers(server: dict) -> dict[str, str]:
     email = _clean(server.get("email"))
     password = _clean(server.get("password"))
     if not email or not password:
-        raise RuntimeError("sub2api server requires email+password or api_key")
+        raise Sub2apiError("sub2api server requires email+password or api_key")
 
     server_id = _clean(server.get("id"))
     base_url = _clean(server.get("base_url"))
@@ -297,7 +298,7 @@ def list_remote_accounts(server: dict) -> list[dict]:
                 timeout=30,
             )
             if not response.ok:
-                raise RuntimeError(f"sub2api list failed: HTTP {response.status_code} {response.text[:200]}")
+                raise Sub2apiError(f"sub2api list failed: HTTP {response.status_code} {response.text[:200]}")
             payload = response.json()
 
             data, total = _extract_paged_items(payload)
@@ -353,7 +354,7 @@ def list_remote_groups(server: dict) -> list[dict]:
                 timeout=30,
             )
             if not response.ok:
-                raise RuntimeError(f"sub2api groups failed: HTTP {response.status_code} {response.text[:200]}")
+                raise Sub2apiError(f"sub2api groups failed: HTTP {response.status_code} {response.text[:200]}")
             payload = response.json()
 
             data, total = _extract_paged_items(payload)
@@ -402,7 +403,7 @@ def _fetch_access_tokens_for_accounts(server: dict, account_ids: list[str]) -> t
             timeout=30,
         )
         if not response.ok:
-            raise RuntimeError(f"HTTP {response.status_code}")
+            raise Sub2apiError(f"HTTP {response.status_code}")
         payload = response.json()
     finally:
         session.close()
@@ -410,7 +411,7 @@ def _fetch_access_tokens_for_accounts(server: dict, account_ids: list[str]) -> t
     data = _unwrap_envelope(payload)
     accounts = data.get("accounts") if isinstance(data, dict) else None
     if not isinstance(accounts, list):
-        raise RuntimeError("invalid export payload")
+        raise Sub2apiError("invalid export payload")
 
     tokens: list[str] = []
     errors: list[dict] = []

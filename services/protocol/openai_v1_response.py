@@ -4,8 +4,7 @@ import time
 import uuid
 from typing import Any, Iterable, Iterator
 
-from fastapi import HTTPException
-
+from services.errors import InvalidRequestError
 from services.protocol.chat_completion_cache import cache_key, chat_completion_cache, normalize_text_messages
 from services.protocol.conversation import (
     ConversationRequest,
@@ -326,7 +325,7 @@ def stream_web_search_response(body: dict[str, Any], messages: list[dict[str, An
     messages = messages if messages is not None else messages_from_input(body.get("input"), body.get("instructions"))
     query = search_query_from_messages(messages) or extract_response_prompt(body.get("input"))
     if not query:
-        raise HTTPException(status_code=400, detail={"error": "input text is required for web_search"})
+        raise InvalidRequestError("input text is required for web_search")
 
     response_id = f"resp_{uuid.uuid4().hex}"
     search_id = f"ws_{uuid.uuid4().hex}"
@@ -425,7 +424,7 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
 
     prompt = extract_response_prompt(body.get("input"))
     if not prompt:
-        raise HTTPException(status_code=400, detail={"error": "input text is required"})
+        raise InvalidRequestError("input text is required")
     model = str(body.get("model") or "gpt-image-2").strip() or "gpt-image-2"
     image_info = extract_response_image(body.get("input"))
     if image_info:

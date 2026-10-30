@@ -4,8 +4,7 @@ import time
 import uuid
 from typing import Any, Iterable, Iterator
 
-from fastapi import HTTPException
-
+from services.errors import InvalidRequestError
 from services.protocol.chat_completion_cache import cache_key, chat_completion_cache, normalize_text_messages
 from services.protocol.conversation import (
     ConversationRequest,
@@ -158,14 +157,14 @@ def chat_messages_from_body(body: dict[str, Any]) -> list[dict[str, Any]]:
     prompt = str(body.get("prompt") or "").strip()
     if prompt:
         return [{"role": "user", "content": prompt}]
-    raise HTTPException(status_code=400, detail={"error": "messages or prompt is required"})
+    raise InvalidRequestError("messages or prompt is required")
 
 
 def chat_image_args(body: dict[str, Any]) -> tuple[str, str, int, list[tuple[bytes, str, str]]]:
     model = str(body.get("model") or "gpt-image-2").strip() or "gpt-image-2"
     prompt = extract_chat_prompt(body)
     if not prompt:
-        raise HTTPException(status_code=400, detail={"error": "prompt is required"})
+        raise InvalidRequestError("prompt is required")
     images = [
         (data, f"image_{idx}.png", mime)
         for idx, (data, mime) in enumerate(extract_chat_image(body), start=1)
@@ -201,7 +200,7 @@ def chat_completion_annotations(annotations: list[dict[str, Any]]) -> list[dict[
 def web_search_chat_response(messages: list[dict[str, Any]], model: str) -> dict[str, Any]:
     query = search_query_from_messages(messages)
     if not query:
-        raise HTTPException(status_code=400, detail={"error": "messages or prompt is required for web search"})
+        raise InvalidRequestError("messages or prompt is required for web search")
     text, annotations = text_with_url_citations(run_web_search(query))
     return completion_response(
         model,
@@ -214,7 +213,7 @@ def web_search_chat_response(messages: list[dict[str, Any]], model: str) -> dict
 def stream_web_search_chat_completion(messages: list[dict[str, Any]], model: str) -> Iterator[dict[str, Any]]:
     query = search_query_from_messages(messages)
     if not query:
-        raise HTTPException(status_code=400, detail={"error": "messages or prompt is required for web search"})
+        raise InvalidRequestError("messages or prompt is required for web search")
     text, _annotations = text_with_url_citations(run_web_search(query))
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     created = int(time.time())

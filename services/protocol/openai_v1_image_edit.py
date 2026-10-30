@@ -5,9 +5,9 @@ from typing import Any, Iterator
 
 from PIL import Image
 
+from services.errors import ImageGenerationError
 from services.protocol.conversation import (
     ConversationRequest,
-    ImageGenerationError,
     collect_image_outputs,
     count_text_tokens,
     encode_images,

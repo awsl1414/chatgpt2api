@@ -11,7 +11,7 @@ os.environ.setdefault("CHATGPT2API_AUTH_KEY", "test-auth")
 from services.account_service import AccountService
 from services.auth_service import AuthService
 from services.config import config
-from services.openai_backend_api import InvalidAccessTokenError
+from services.errors import InvalidAccessTokenError
 from services.storage.json_storage import JSONStorageBackend
 from utils.helper import anonymize_token, split_image_model
 

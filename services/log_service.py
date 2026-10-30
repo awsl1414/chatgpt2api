@@ -10,11 +10,11 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from fastapi import HTTPException
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from services.config import DATA_DIR
+from services.errors import DomainError, ImageGenerationError, public_image_error_message
 from services.protocol.error_response import anthropic_error_response, openai_error_response
 from utils.helper import anthropic_sse_stream, sse_json_stream
 
@@ -180,8 +180,6 @@ def _request_excerpt(text: object, limit: int = 1000) -> str:
 
 
 def _image_error_response(exc: Exception) -> JSONResponse:
-    from services.protocol.conversation import public_image_error_message
-
     message = public_image_error_message(str(exc))
     if "no available image quota" in message.lower():
         return openai_error_response(
@@ -195,7 +193,7 @@ def _image_error_response(exc: Exception) -> JSONResponse:
             },
             429,
         )
-    if hasattr(exc, "to_openai_error") and hasattr(exc, "status_code"):
+    if isinstance(exc, ImageGenerationError):
         return JSONResponse(status_code=int(exc.status_code), content=exc.to_openai_error())
     return openai_error_response(message, 502)
 
@@ -225,15 +223,13 @@ class LoggedCall:
     request_shape: dict[str, int] | None = None
 
     async def run(self, handler, *args, sse: str = "openai"):
-        from services.protocol.conversation import ImageGenerationError
-
         try:
             result = await run_in_threadpool(handler, *args)
         except ImageGenerationError as exc:
             self.log("调用失败", status="failed", error=str(exc), account_email=getattr(exc, "account_email", ""),
                      conversation_id=getattr(exc, "conversation_id", ""))
             return _image_error_response(exc)
-        except HTTPException as exc:
+        except DomainError as exc:
             self.log("调用失败", status="failed", error=str(exc.detail))
             raise
         except Exception as exc:
@@ -255,7 +251,7 @@ class LoggedCall:
             self.log("调用失败", status="failed", error=str(exc), account_email=getattr(exc, "account_email", ""),
                      conversation_id=getattr(exc, "conversation_id", ""))
             return _image_error_response(exc)
-        except HTTPException as exc:
+        except DomainError as exc:
             self.log("调用失败", status="failed", error=str(exc.detail))
             raise
         except Exception as exc:
@@ -289,9 +285,7 @@ class LoggedCall:
                 account_email=(account_emails[0] if account_emails else getattr(exc, "account_email", "")),
                 conversation_id=(conversation_ids[0] if conversation_ids else getattr(exc, "conversation_id", "")),
             )
-            if self.endpoint.startswith("/v1/images") and not hasattr(exc, "to_openai_error"):
-                from services.protocol.conversation import ImageGenerationError, public_image_error_message
-
+            if self.endpoint.startswith("/v1/images") and not isinstance(exc, ImageGenerationError):
                 raise ImageGenerationError(public_image_error_message(str(exc))) from exc
             raise
         finally:
