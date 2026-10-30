@@ -484,10 +484,6 @@ def assistant_raw_text(event: dict[str, Any], current_text: str = "", history_te
     return apply_text_patch(event, current_text, history_text)
 
 
-def assistant_text(event: dict[str, Any], current_text: str = "", history_text: str = "") -> str:
-    return sanitize_output_text(assistant_raw_text(event, current_text, history_text))
-
-
 def event_assistant_text(event: dict[str, Any], history_text: str = "") -> str:
     for candidate in (event, event.get("v")):
         if not isinstance(candidate, dict):

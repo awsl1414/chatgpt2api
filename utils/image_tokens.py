@@ -12,8 +12,6 @@ DEFAULT_IMAGE_SIZE = (1024, 1024)
 IMAGE_INPUT_TOKEN_MODEL = "gpt-5.4-mini"
 
 PATCH_SIZE = 32
-TILE_SIZE = 512
-TILE_HIGH_SHORT_SIDE = 768
 
 PATCH_1536_MODELS = (
     "gpt-5.4-mini",
@@ -137,37 +135,6 @@ def _patch_tokens(width: int, height: int, model: str, detail: str) -> int:
 
     tokens = min(_patch_count(max(1, resized_width), max(1, resized_height)), patch_budget)
     return math.ceil(tokens * multiplier)
-
-
-def _tile_rates(model: str) -> tuple[int, int]:
-    name = _model_name(model)
-    if name in {"gpt-5", "gpt-5-chat-latest"}:
-        return 70, 140
-    if name.startswith("gpt-4o-mini"):
-        return 2833, 5667
-    if name.startswith(("o1", "o1-pro", "o3")):
-        return 75, 150
-    if name.startswith("computer-use-preview"):
-        return 65, 129
-    return 85, 170
-
-
-def _tile_tokens(width: int, height: int, model: str, detail: str) -> int:
-    base_tokens, tile_tokens = _tile_rates(model)
-    if detail == "low":
-        return base_tokens
-
-    scale = min(1.0, 2048 / max(width, height))
-    resized_width = width * scale
-    resized_height = height * scale
-    short_side = min(resized_width, resized_height)
-    if short_side > 0:
-        scale = TILE_HIGH_SHORT_SIDE / short_side
-        resized_width *= scale
-        resized_height *= scale
-
-    tiles = math.ceil(resized_width / TILE_SIZE) * math.ceil(resized_height / TILE_SIZE)
-    return base_tokens + tiles * tile_tokens
 
 
 def count_image_input_tokens(

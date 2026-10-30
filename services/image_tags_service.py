@@ -35,10 +35,6 @@ def save_tags(data: dict[str, list[str]]) -> None:
     TAGS_FILE.write_text(json.dumps(data, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
 
-def get_tags(image_rel: str) -> list[str]:
-    return load_tags().get(image_rel, [])
-
-
 def set_tags(image_rel: str, tags: list[str]) -> list[str]:
     data = load_tags()
     cleaned = list(dict.fromkeys(t.strip() for t in tags if t.strip()))

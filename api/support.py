@@ -37,10 +37,6 @@ def require_identity(authorization: str | None) -> dict[str, object]:
     return identity
 
 
-def require_auth_key(authorization: str | None) -> None:
-    require_identity(authorization)
-
-
 def require_admin(authorization: str | None) -> dict[str, object]:
     identity = require_identity(authorization)
     if identity.get("role") != "admin":
@@ -50,13 +46,6 @@ def require_admin(authorization: str | None) -> dict[str, object]:
 
 def resolve_image_base_url(request: Request) -> str:
     return config.base_url or f"{request.url.scheme}://{request.headers.get('host', request.url.netloc)}"
-
-
-def raise_image_quota_error(exc: Exception) -> None:
-    message = str(exc)
-    if "no available image quota" in message.lower():
-        raise HTTPException(status_code=429, detail={"error": "no available image quota"}) from exc
-    raise HTTPException(status_code=502, detail={"error": message}) from exc
 
 
 def sanitize_cpa_pool(pool: dict | None) -> dict | None:
