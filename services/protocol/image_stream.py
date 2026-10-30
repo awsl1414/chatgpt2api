@@ -7,7 +7,7 @@
 - `_generate_single_image` / `stream_image_outputs_with_pool`：单图重试与并发编排；
 - `stream_codex_image_outputs`：codex 生图流。
 
-存储职责剥离（审计 B-中5）：本模块不 import `image_storage_service`，
+存储职责剥离（审计 B-中5）：本模块不直接依赖图片存储服务，
 图片落盘/上传通过 `set_image_saver` 注入回调完成，由上层组装入口
 （`api/app.create_app`）负责注入。
 """
