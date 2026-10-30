@@ -18,8 +18,9 @@ import {
   type ProxyRuntimeEgressMode,
   type ProxyTestResult,
 } from "@/lib/api";
+import { toastActionResult } from "@/lib/action-result";
 
-import { useSettingsStore } from "../store";
+import { useConfigStore } from "../store/config";
 
 export function ProxyRuntimeCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);
@@ -27,13 +28,17 @@ export function ProxyRuntimeCard() {
   const [proxyResult, setProxyResult] = useState<ProxyTestResult | null>(null);
   const [clearanceResult, setClearanceResult] = useState<ClearanceTestResult | null>(null);
   const [targetUrl, setTargetUrl] = useState("https://chatgpt.com");
-  const config = useSettingsStore((state) => state.config);
-  const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
-  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
-  const saveConfig = useSettingsStore((state) => state.saveConfig);
-  const setProxyRuntimeField = useSettingsStore((state) => state.setProxyRuntimeField);
-  const setProxyRuntimeClearanceField = useSettingsStore((state) => state.setProxyRuntimeClearanceField);
-  const setProxyRuntimeStatusCodesText = useSettingsStore((state) => state.setProxyRuntimeStatusCodesText);
+  const config = useConfigStore((state) => state.config);
+  const isLoadingConfig = useConfigStore((state) => state.isLoadingConfig);
+  const isSavingConfig = useConfigStore((state) => state.isSavingConfig);
+  const saveConfig = useConfigStore((state) => state.saveConfig);
+  const setProxyRuntimeField = useConfigStore((state) => state.setProxyRuntimeField);
+  const setProxyRuntimeClearanceField = useConfigStore((state) => state.setProxyRuntimeClearanceField);
+  const setProxyRuntimeStatusCodesText = useConfigStore((state) => state.setProxyRuntimeStatusCodesText);
+
+  const handleSave = async () => {
+    toastActionResult(await saveConfig(), "配置已保存", "保存系统配置失败");
+  };
 
   if (isLoadingConfig || !config?.proxy_runtime) {
     return (
@@ -56,7 +61,8 @@ export function ProxyRuntimeCard() {
     setProxyResult(null);
     try {
       const saved = await saveConfig();
-      if (!saved) {
+      if (!saved.ok) {
+        toast.error(saved.error ?? "测试清障代理失败");
         return;
       }
       const data = await testProxy();
@@ -78,7 +84,8 @@ export function ProxyRuntimeCard() {
     setClearanceResult(null);
     try {
       const saved = await saveConfig();
-      if (!saved) {
+      if (!saved.ok) {
+        toast.error(saved.error ?? "测试 Clearance 失败");
         return;
       }
       const data = await testProxyClearance(targetUrl.trim() || "https://chatgpt.com");
@@ -366,7 +373,7 @@ export function ProxyRuntimeCard() {
           <Button
             type="button"
             className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
-            onClick={() => void saveConfig()}
+            onClick={() => void handleSave()}
             disabled={isSavingConfig}
           >
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}

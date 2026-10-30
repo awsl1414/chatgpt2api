@@ -1,7 +1,7 @@
 "use client";
 
 import { CloudUpload, Download, Eye, LoaderCircle, Play, RefreshCcw, Shield, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { Badge } from "@/components/ui/badge";
@@ -11,9 +11,21 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import webConfig from "@/constants/common-env";
-import { fetchBackupDetail, getBackupDownloadUrl, type BackupDetail, type BackupInclude } from "@/lib/api";
+import {
+  deleteBackup,
+  fetchBackupDetail,
+  fetchBackups,
+  getBackupDownloadUrl,
+  runBackupNow,
+  testBackupConnection,
+  type BackupDetail,
+  type BackupInclude,
+  type BackupItem,
+  type BackupState,
+} from "@/lib/api";
+import { actionError, toastActionResult } from "@/lib/action-result";
 import { getStoredAuthKey } from "@/store/auth";
-import { useSettingsStore } from "../store";
+import { useConfigStore } from "../store/config";
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -78,22 +90,123 @@ export function BackupSettingsCard() {
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detail, setDetail] = useState<BackupDetail | null>(null);
-  const config = useSettingsStore((state) => state.config);
-  const backups = useSettingsStore((state) => state.backups);
-  const backupState = useSettingsStore((state) => state.backupState);
-  const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
-  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
-  const isLoadingBackups = useSettingsStore((state) => state.isLoadingBackups);
-  const isRunningBackup = useSettingsStore((state) => state.isRunningBackup);
-  const deletingBackupKey = useSettingsStore((state) => state.deletingBackupKey);
-  const isTestingBackup = useSettingsStore((state) => state.isTestingBackup);
-  const saveConfig = useSettingsStore((state) => state.saveConfig);
-  const loadBackups = useSettingsStore((state) => state.loadBackups);
-  const runBackup = useSettingsStore((state) => state.runBackup);
-  const removeBackup = useSettingsStore((state) => state.removeBackup);
-  const testBackup = useSettingsStore((state) => state.testBackup);
-  const setBackupField = useSettingsStore((state) => state.setBackupField);
-  const setBackupInclude = useSettingsStore((state) => state.setBackupInclude);
+  const config = useConfigStore((state) => state.config);
+  const isLoadingConfig = useConfigStore((state) => state.isLoadingConfig);
+  const isSavingConfig = useConfigStore((state) => state.isSavingConfig);
+  const saveConfig = useConfigStore((state) => state.saveConfig);
+  const setBackupField = useConfigStore((state) => state.setBackupField);
+  const setBackupInclude = useConfigStore((state) => state.setBackupInclude);
+
+  // 备份历史是服务端数据快照（审计 F-高3），只保存在本组件局部状态
+  const didLoadRef = useRef(false);
+  const [backups, setBackups] = useState<BackupItem[]>([]);
+  const [backupState, setBackupState] = useState<BackupState | null>(null);
+  const [isLoadingBackups, setIsLoadingBackups] = useState(true);
+  const [isRunningBackup, setIsRunningBackup] = useState(false);
+  const [deletingBackupKey, setDeletingBackupKey] = useState<string | null>(null);
+  const [isTestingBackup, setIsTestingBackup] = useState(false);
+
+  const loadBackups = async (silent = false) => {
+    if (!silent) {
+      setIsLoadingBackups(true);
+    }
+    try {
+      const data = await fetchBackups();
+      setBackups(data.items);
+      setBackupState(data.state);
+    } catch (error) {
+      if (!silent) {
+        toast.error(actionError(error, "加载备份列表失败"));
+      }
+    } finally {
+      if (!silent) {
+        setIsLoadingBackups(false);
+      }
+    }
+  };
+
+  // R2 凭据配置齐了才拉取历史备份，避免对未配置的部署打无效请求
+  const backupConfigured = Boolean(
+    String(config?.backup?.account_id || "").trim()
+    && String(config?.backup?.access_key_id || "").trim()
+    && String(config?.backup?.secret_access_key || "").trim()
+    && String(config?.backup?.bucket || "").trim(),
+  );
+
+  useEffect(() => {
+    if (didLoadRef.current || isLoadingConfig) {
+      return;
+    }
+    didLoadRef.current = true;
+    if (backupConfigured) {
+      void loadBackups();
+    } else {
+      setIsLoadingBackups(false);
+    }
+  }, [isLoadingConfig, backupConfigured]);
+
+  // 备份执行中每 3s 轮询刷新状态
+  useEffect(() => {
+    if (!backupState?.running) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void loadBackups(true);
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [backupState?.running]);
+
+  const handleRunBackup = async () => {
+    setIsRunningBackup(true);
+    try {
+      const saved = await saveConfig();
+      if (!saved.ok) {
+        toast.error(saved.error ?? "执行备份失败");
+        return;
+      }
+      const data = await runBackupNow();
+      toast.success(`备份已完成：${data.result.key}`);
+      await loadBackups(true);
+    } catch (error) {
+      toast.error(actionError(error, "执行备份失败"));
+    } finally {
+      setIsRunningBackup(false);
+    }
+  };
+
+  const handleRemoveBackup = async (key: string) => {
+    setDeletingBackupKey(key);
+    try {
+      await deleteBackup(key);
+      toast.success("备份已删除");
+      await loadBackups(true);
+    } catch (error) {
+      toast.error(actionError(error, "删除备份失败"));
+    } finally {
+      setDeletingBackupKey(null);
+    }
+  };
+
+  const handleTestBackup = async () => {
+    setIsTestingBackup(true);
+    try {
+      const saved = await saveConfig();
+      if (!saved.ok) {
+        toast.error(saved.error ?? "测试备份连接失败");
+        return;
+      }
+      const data = await testBackupConnection();
+      toast.success(`R2 连接正常（HTTP ${data.result.status}）`);
+    } catch (error) {
+      toast.error(actionError(error, "测试备份连接失败"));
+    } finally {
+      setIsTestingBackup(false);
+    }
+  };
+
+  const handleSave = async () => {
+    toastActionResult(await saveConfig(), "配置已保存", "保存系统配置失败");
+  };
 
   if (isLoadingConfig) {
     return (
@@ -284,7 +397,7 @@ export function BackupSettingsCard() {
           </div>
 
           <div className="flex flex-wrap justify-end gap-2">
-          <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700" onClick={() => void testBackup()} disabled={isTestingBackup}>
+          <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700" onClick={() => void handleTestBackup()} disabled={isTestingBackup}>
             {isTestingBackup ? <LoaderCircle className="size-4 animate-spin" /> : <Shield className="size-4" />}
             测试连接
           </Button>
@@ -292,11 +405,11 @@ export function BackupSettingsCard() {
             {isLoadingBackups ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
             刷新列表
           </Button>
-          <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700" onClick={() => void runBackup()} disabled={isRunningBackup || Boolean(backupState?.running)}>
+          <Button type="button" variant="outline" className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700" onClick={() => void handleRunBackup()} disabled={isRunningBackup || Boolean(backupState?.running)}>
             {isRunningBackup || backupState?.running ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
             立即备份
           </Button>
-          <Button className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+          <Button className="h-9 rounded-xl bg-stone-950 px-4 text-white hover:bg-stone-800" onClick={() => void handleSave()} disabled={isSavingConfig}>
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <CloudUpload className="size-4" />}
             保存配置
           </Button>
@@ -354,7 +467,7 @@ export function BackupSettingsCard() {
                         type="button"
                         variant="outline"
                         className="h-9 rounded-xl border-rose-200 bg-white px-4 text-rose-700"
-                        onClick={() => void removeBackup(item.key)}
+                        onClick={() => void handleRemoveBackup(item.key)}
                         disabled={isDeleting}
                       >
                         {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}

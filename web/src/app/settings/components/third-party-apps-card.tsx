@@ -6,15 +6,20 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
+import { toastActionResult } from "@/lib/action-result";
 
-import { useSettingsStore } from "../store";
+import { useConfigStore } from "../store/config";
 
 export function ThirdPartyAppsCard() {
-  const config = useSettingsStore((state) => state.config);
-  const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
-  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
-  const setInfiniteCanvasField = useSettingsStore((state) => state.setInfiniteCanvasField);
-  const saveConfig = useSettingsStore((state) => state.saveConfig);
+  const config = useConfigStore((state) => state.config);
+  const isLoadingConfig = useConfigStore((state) => state.isLoadingConfig);
+  const isSavingConfig = useConfigStore((state) => state.isSavingConfig);
+  const setInfiniteCanvasField = useConfigStore((state) => state.setInfiniteCanvasField);
+  const saveConfig = useConfigStore((state) => state.saveConfig);
+
+  const handleSave = async () => {
+    toastActionResult(await saveConfig(), "配置已保存", "保存系统配置失败");
+  };
 
   if (isLoadingConfig || !config?.third_party_apps) {
     return (
@@ -70,7 +75,7 @@ export function ThirdPartyAppsCard() {
         </div>
 
         <div className="flex justify-end">
-          <Button className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+          <Button className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800" onClick={() => void handleSave()} disabled={isSavingConfig}>
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
             保存
           </Button>

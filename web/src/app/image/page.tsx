@@ -28,7 +28,7 @@ import {
 } from "@/lib/image-task-state";
 import { formatAvailableQuota, parseImageSize, pickFallbackConversationId } from "@/lib/image-utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
-import { useSettingsStore } from "@/app/settings/store";
+import { useConfigStore } from "@/app/settings/store/config";
 import {
   getImageConversationStats,
   listImageConversations,
@@ -42,7 +42,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const config = useSettingsStore((state) => state.config);
+  const config = useConfigStore((state) => state.config);
   const imageTimeoutRetrySecs = Number(config?.image_timeout_retry_secs || 30);
 
   const conversations = useImageConversationsStore((state) => state.conversations);

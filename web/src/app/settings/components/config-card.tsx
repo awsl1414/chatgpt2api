@@ -11,45 +11,58 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { ImageStorageMode } from "@/lib/api";
+import { toastActionResult } from "@/lib/action-result";
 
-import { useSettingsStore } from "../store";
+import { useConfigStore } from "../store/config";
 
 export function ConfigCard() {
   const logLevelOptions = ["debug", "info", "warning", "error"];
-  const config = useSettingsStore((state) => state.config);
-  const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
-  const upstreamModels = useSettingsStore((state) => state.upstreamModels);
+  const config = useConfigStore((state) => state.config);
+  const isLoadingConfig = useConfigStore((state) => state.isLoadingConfig);
+  const upstreamModels = useConfigStore((state) => state.upstreamModels);
   // 当前配置值不在目录中时（如目录拉取失败或上游已下线该模型），把它补进选项，避免下拉框显示空白
   const upstreamModelOptions = config?.default_upstream_model_name
     && !upstreamModels.includes(config.default_upstream_model_name)
     ? [config.default_upstream_model_name, ...upstreamModels]
     : upstreamModels;
-  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
-  const setRefreshAccountIntervalMinute = useSettingsStore((state) => state.setRefreshAccountIntervalMinute);
-  const setImageRetentionDays = useSettingsStore((state) => state.setImageRetentionDays);
-  const setImagePollTimeoutSecs = useSettingsStore((state) => state.setImagePollTimeoutSecs);
-  const setImageAccountConcurrency = useSettingsStore((state) => state.setImageAccountConcurrency);
-  const setImageSettleEnabled = useSettingsStore((state) => state.setImageSettleEnabled);
-  const setImageRemoveConversationAfterResult = useSettingsStore((state) => state.setImageRemoveConversationAfterResult);
-  const setImageRemoveConversationAlways = useSettingsStore((state) => state.setImageRemoveConversationAlways);
-  const setImageSettleSecs = useSettingsStore((state) => state.setImageSettleSecs);
-  const setImageTimeoutRetrySecs = useSettingsStore((state) => state.setImageTimeoutRetrySecs);
-  const setAutoRemoveInvalidAccounts = useSettingsStore((state) => state.setAutoRemoveInvalidAccounts);
-  const setAutoRemoveRateLimitedAccounts = useSettingsStore((state) => state.setAutoRemoveRateLimitedAccounts);
-  const setAutoReloginAfterRefresh = useSettingsStore((state) => state.setAutoReloginAfterRefresh);
-  const setLogLevel = useSettingsStore((state) => state.setLogLevel);
-  const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
-  const setGlobalSystemPrompt = useSettingsStore((state) => state.setGlobalSystemPrompt);
-  const setDefaultUpstreamModelName = useSettingsStore((state) => state.setDefaultUpstreamModelName);
-  const setDefaultThinkingEffort = useSettingsStore((state) => state.setDefaultThinkingEffort);
-  const setSensitiveWordsText = useSettingsStore((state) => state.setSensitiveWordsText);
-  const setAIReviewField = useSettingsStore((state) => state.setAIReviewField);
-  const setImageStorageField = useSettingsStore((state) => state.setImageStorageField);
-  const testImageStorage = useSettingsStore((state) => state.testImageStorage);
-  const syncImagesToWebDAV = useSettingsStore((state) => state.syncImagesToWebDAV);
-  const isTestingImageStorage = useSettingsStore((state) => state.isTestingImageStorage);
-  const isSyncingImageStorage = useSettingsStore((state) => state.isSyncingImageStorage);
-  const saveConfig = useSettingsStore((state) => state.saveConfig);
+  const isSavingConfig = useConfigStore((state) => state.isSavingConfig);
+  const setRefreshAccountIntervalMinute = useConfigStore((state) => state.setRefreshAccountIntervalMinute);
+  const setImageRetentionDays = useConfigStore((state) => state.setImageRetentionDays);
+  const setImagePollTimeoutSecs = useConfigStore((state) => state.setImagePollTimeoutSecs);
+  const setImageAccountConcurrency = useConfigStore((state) => state.setImageAccountConcurrency);
+  const setImageSettleEnabled = useConfigStore((state) => state.setImageSettleEnabled);
+  const setImageRemoveConversationAfterResult = useConfigStore((state) => state.setImageRemoveConversationAfterResult);
+  const setImageRemoveConversationAlways = useConfigStore((state) => state.setImageRemoveConversationAlways);
+  const setImageSettleSecs = useConfigStore((state) => state.setImageSettleSecs);
+  const setImageTimeoutRetrySecs = useConfigStore((state) => state.setImageTimeoutRetrySecs);
+  const setAutoRemoveInvalidAccounts = useConfigStore((state) => state.setAutoRemoveInvalidAccounts);
+  const setAutoRemoveRateLimitedAccounts = useConfigStore((state) => state.setAutoRemoveRateLimitedAccounts);
+  const setAutoReloginAfterRefresh = useConfigStore((state) => state.setAutoReloginAfterRefresh);
+  const setLogLevel = useConfigStore((state) => state.setLogLevel);
+  const setBaseUrl = useConfigStore((state) => state.setBaseUrl);
+  const setGlobalSystemPrompt = useConfigStore((state) => state.setGlobalSystemPrompt);
+  const setDefaultUpstreamModelName = useConfigStore((state) => state.setDefaultUpstreamModelName);
+  const setDefaultThinkingEffort = useConfigStore((state) => state.setDefaultThinkingEffort);
+  const setSensitiveWordsText = useConfigStore((state) => state.setSensitiveWordsText);
+  const setAIReviewField = useConfigStore((state) => state.setAIReviewField);
+  const setImageStorageField = useConfigStore((state) => state.setImageStorageField);
+  const testImageStorage = useConfigStore((state) => state.testImageStorage);
+  const syncImagesToWebDAV = useConfigStore((state) => state.syncImagesToWebDAV);
+  const isTestingImageStorage = useConfigStore((state) => state.isTestingImageStorage);
+  const isSyncingImageStorage = useConfigStore((state) => state.isSyncingImageStorage);
+  const saveConfig = useConfigStore((state) => state.saveConfig);
+
+  const handleSave = async () => {
+    toastActionResult(await saveConfig(), "配置已保存", "保存系统配置失败");
+  };
+
+  const handleTestImageStorage = async () => {
+    toastActionResult(await testImageStorage(), "WebDAV 连接可用", "测试 WebDAV 失败");
+  };
+
+  const handleSyncImagesToWebDAV = async () => {
+    toastActionResult(await syncImagesToWebDAV(), "同步完成", "同步图片失败");
+  };
 
   if (isLoadingConfig) {
     return (
@@ -293,7 +306,7 @@ export function ConfigCard() {
                   type="button"
                   variant="outline"
                   className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700"
-                  onClick={() => void testImageStorage()}
+                  onClick={() => void handleTestImageStorage()}
                   disabled={isTestingImageStorage || !config?.image_storage?.enabled}
                 >
                   {isTestingImageStorage ? <LoaderCircle className="size-4 animate-spin" /> : <Cloud className="size-4" />}
@@ -303,7 +316,7 @@ export function ConfigCard() {
                   type="button"
                   variant="outline"
                   className="h-9 rounded-xl border-stone-200 bg-white px-4 text-stone-700"
-                  onClick={() => void syncImagesToWebDAV()}
+                  onClick={() => void handleSyncImagesToWebDAV()}
                   disabled={isSyncingImageStorage || !config?.image_storage?.enabled || config?.image_storage?.mode === "local"}
                 >
                   {isSyncingImageStorage ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
@@ -432,7 +445,7 @@ export function ConfigCard() {
         <div className="flex justify-end">
           <Button
             className="h-10 rounded-xl bg-stone-950 px-5 text-white hover:bg-stone-800"
-            onClick={() => void saveConfig()}
+            onClick={() => void handleSave()}
             disabled={isSavingConfig}
           >
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
