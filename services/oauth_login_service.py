@@ -9,6 +9,10 @@
 
 得到的 refresh_token 跟 account_service 自动刷新机制用的 client_id 是同一个
 （app_2SKx67EdpoN0G6j64rFvigXD），所以落盘后能直接进入 keepalive 周期。
+
+与 ``services/account/password_login.py`` 的关系：同属 OAuth 登录域但上游流程
+不同——那边是服务端无头完成邮箱+密码登录（自动重登兜底），本模块是用户
+浏览器手动授权后回填 code 的桥接流程；两者共享 services/openai_oauth 常量。
 """
 from __future__ import annotations
 
