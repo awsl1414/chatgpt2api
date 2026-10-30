@@ -78,7 +78,7 @@ docker compose -f docker-compose.warp.yml up -d --build
 - `init-config`：幂等写入 `proxy_runtime` 默认配置。
 - `app`：启动 ChatGPT2API 主服务。
 
-默认只让上游 OpenAI / ChatGPT 请求走稳定代理，账号邮箱、CPA 等辅助链路不会被强制接管。账号自身配置的代理优先级最高，其次是稳定代理运行时，再其次是显式代理和旧版全局代理。
+默认只让上游 OpenAI / ChatGPT 请求走稳定代理，账号邮箱、CPA 等辅助链路不会被强制接管。账号自身配置的代理优先级最高，其次是稳定代理运行时，再其次是显式代理。（旧版 `config.json` 全局 `proxy` 配置已移除，请改用稳定代理运行时。）
 
 可在 `.env` 中调整端口和代理运行时参数，也可在后台设置页的「稳定代理运行时」面板手动保存、测试代理和测试 clearance。
 

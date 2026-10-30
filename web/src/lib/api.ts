@@ -185,7 +185,6 @@ export type ThirdPartyAppsSettings = {
 };
 
 export type SettingsConfig = {
-  proxy: string;
   base_url?: string;
   global_system_prompt?: string;
   default_upstream_model_name?: string;

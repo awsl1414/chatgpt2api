@@ -588,10 +588,10 @@ class ConfigStore:
         data["proxy_runtime"] = self.get_public_proxy_runtime_settings()
         data["third_party_apps"] = self.get_third_party_apps_settings()
         data.pop("auth-key", None)
+        # legacy 全局代理（config.json 的 "proxy" 键）已按审计 §7 决策项删除，
+        # 不再对外暴露，存量配置里的残留键不再生效
+        data.pop("proxy", None)
         return data
-
-    def get_proxy_settings(self) -> str:
-        return str(self.data.get("proxy") or "").strip()
 
     def get_proxy_runtime_settings(self) -> dict[str, object]:
         return _normalize_proxy_runtime_settings(self.data.get("proxy_runtime"))

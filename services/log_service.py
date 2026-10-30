@@ -30,6 +30,9 @@ class LogService:
 
     @staticmethod
     def _legacy_id(raw_line: str, line_number: int) -> str:
+        # 取舍说明（审计 §7 决策项 4）：为没有 id 的存量 logs.jsonl 旧日志行
+        # 确定性生成 id（行号+内容哈希）。删除会导致旧日志无法被选中删除，
+        # 故保留该兼容 shim。
         payload = f"{line_number}:{raw_line}".encode("utf-8", errors="ignore")
         return hashlib.sha1(payload).hexdigest()[:24]
 

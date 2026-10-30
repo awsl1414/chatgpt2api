@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [破坏性变更] 移除旧版全局代理：`config.json` 的 `proxy` 键不再生效，设置页全局代理输入框已删除，代理请改用「稳定代理运行时」（`proxy_runtime`）或账号级代理。优先级为 账号代理 > 稳定代理运行时（仅上游请求）> 显式代理 > 直连。
 + [优化] 设置页「默认请求上游模型名称」由手填改为下拉选择，选项来自系统缓存的上游模型目录（新增 `GET /api/upstream-models` 接口）；目录拉取失败或当前配置值不在目录中时自动回退保留原值。
 + [新增] 新增 Codex 通道图像模型 `codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`（含 plus-/team-/pro- 前缀变体）：工具层模型 ID 按公开名映射传给上游 `/backend-api/codex/responses`，`/v1/models` 按账号类型广播；图片页模型选择器展示友好名称。
 + [修复] Codex 生图顶层模型 `gpt-5.5` 已被上游拒绝（400 `model_not_found`），改为实测可用的 `gpt-6-luna`。

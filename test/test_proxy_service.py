@@ -17,12 +17,8 @@ from services.proxy_service import (
 
 
 class FakeConfig:
-    def __init__(self, legacy_proxy: str = "", runtime: dict[str, object] | None = None) -> None:
-        self.legacy_proxy = legacy_proxy
+    def __init__(self, runtime: dict[str, object] | None = None) -> None:
         self.runtime = runtime if runtime is not None else copy.deepcopy(DEFAULT_PROXY_RUNTIME)
-
-    def get_proxy_settings(self) -> str:
-        return self.legacy_proxy
 
     def get_proxy_runtime_settings(self) -> dict[str, object]:
         return copy.deepcopy(self.runtime)
@@ -46,45 +42,45 @@ class ProxyServiceTests(unittest.TestCase):
         self.assertEqual(normalize_proxy_url(" socks5h://proxy.example:1080 "), "socks5h://proxy.example:1080")
         self.assertEqual(normalize_proxy_url("   "), "")
 
-    def test_build_session_kwargs_keeps_legacy_global_proxy_when_runtime_disabled(self) -> None:
-        store = ProxySettingsStore(FakeConfig(legacy_proxy="  http://legacy.example:8080  "))
+    def test_build_session_kwargs_direct_when_runtime_disabled(self) -> None:
+        store = ProxySettingsStore(FakeConfig())
 
         kwargs = store.build_session_kwargs(impersonate="chrome")
 
         self.assertEqual(kwargs["impersonate"], "chrome")
-        self.assertEqual(kwargs["proxy"], "http://legacy.example:8080")
+        self.assertNotIn("proxy", kwargs)
 
     def test_runtime_proxy_is_limited_to_upstream_scope_by_default(self) -> None:
         runtime = make_runtime(enabled=True, egress_mode="single_proxy", proxy_url="http://runtime.example:8080")
-        store = ProxySettingsStore(FakeConfig(legacy_proxy="http://legacy.example:8080", runtime=runtime))
+        store = ProxySettingsStore(FakeConfig(runtime=runtime))
 
-        self.assertEqual(
-            store.build_session_kwargs()["proxy"],
-            "http://legacy.example:8080",
+        self.assertNotIn(
+            "proxy",
+            store.build_session_kwargs(),
         )
         self.assertEqual(
             store.build_session_kwargs(upstream=True)["proxy"],
             "http://runtime.example:8080",
         )
 
-    def test_account_proxy_wins_over_runtime_and_global_proxy(self) -> None:
+    def test_account_proxy_wins_over_runtime_proxy(self) -> None:
         runtime = make_runtime(enabled=True, egress_mode="single_proxy", proxy_url="http://runtime.example:8080")
-        store = ProxySettingsStore(FakeConfig(legacy_proxy="http://legacy.example:8080", runtime=runtime))
+        store = ProxySettingsStore(FakeConfig(runtime=runtime))
 
         kwargs = store.build_session_kwargs(account={"proxy": " socks://account.example:1080 "}, upstream=True)
 
         self.assertEqual(kwargs["proxy"], "socks5h://account.example:1080")
 
-    def test_proxy_runtime_single_proxy_wins_over_explicit_and_legacy_proxy_when_enabled(self) -> None:
+    def test_proxy_runtime_single_proxy_wins_over_explicit_proxy_when_enabled(self) -> None:
         runtime = make_runtime(enabled=True, egress_mode="single_proxy", proxy_url=" socks5://runtime.example:1080 ")
-        store = ProxySettingsStore(FakeConfig(legacy_proxy="http://legacy.example:8080", runtime=runtime))
+        store = ProxySettingsStore(FakeConfig(runtime=runtime))
 
         kwargs = store.build_session_kwargs(proxy="http://explicit.example:8080", upstream=True)
 
         self.assertEqual(kwargs["proxy"], "socks5h://runtime.example:1080")
 
-    def test_explicit_proxy_wins_over_legacy_global_proxy_when_runtime_disabled(self) -> None:
-        store = ProxySettingsStore(FakeConfig(legacy_proxy="http://legacy.example:8080"))
+    def test_explicit_proxy_used_when_runtime_disabled(self) -> None:
+        store = ProxySettingsStore(FakeConfig())
 
         kwargs = store.build_session_kwargs(proxy=" socks5://explicit.example:1080 ")
 
@@ -97,7 +93,7 @@ class ProxyServiceTests(unittest.TestCase):
             proxy_url="http://runtime.example:8080",
             resource_proxy_url=" socks5://resource.example:1080 ",
         )
-        store = ProxySettingsStore(FakeConfig(legacy_proxy="http://legacy.example:8080", runtime=runtime))
+        store = ProxySettingsStore(FakeConfig(runtime=runtime))
 
         kwargs = store.build_session_kwargs(resource=True, upstream=True)
 

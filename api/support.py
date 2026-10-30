@@ -22,6 +22,9 @@ def extract_bearer_token(authorization: str | None) -> str:
 
 
 def _legacy_admin_identity(token: str) -> dict[str, object] | None:
+    # 取舍说明（审计 §7 决策项 3）：部署主密钥（auth_key）直接映射为 admin 身份，
+    # 与 auth_service 的密钥体系双轨并存。主密钥是对外 /v1/* OpenAI 兼容层的
+    # 认证承载，属「对外 API 兼容例外」，不做合并重构，仅以注释澄清用途。
     auth_key = str(config.auth_key or "").strip()
     # 常量时间比较，避免逐字节短路造成的时序侧信道；统一编码为 bytes 以兼容非 ASCII 字符
     if auth_key and secrets.compare_digest(token.encode("utf-8"), auth_key.encode("utf-8")):

@@ -25,7 +25,6 @@ class FakeStorage:
 class FakeConfig:
     def __init__(self) -> None:
         self.data: dict[str, object] = {
-            "proxy": "",
             "proxy_runtime": copy.deepcopy(DEFAULT_PROXY_RUNTIME),
         }
 
@@ -35,9 +34,6 @@ class FakeConfig:
     def update(self, updates: dict[str, object]) -> dict[str, object]:
         self.data.update(copy.deepcopy(updates))
         return self.get()
-
-    def get_proxy_settings(self) -> str:
-        return str(self.data.get("proxy") or "").strip()
 
     def get_proxy_runtime_settings(self) -> dict[str, object]:
         return copy.deepcopy(self.data["proxy_runtime"])  # type: ignore[index]

@@ -23,18 +23,18 @@ class ProxyRuntimeConfigTests(unittest.TestCase):
         return tmp_dir, ConfigStore(path)
 
     def test_defaults_are_safe_and_included_in_public_config(self) -> None:
+        # legacy 全局代理（"proxy" 键）已删除：存量键不再生效，也不出现在公开配置中
         tmp_dir, store = self._make_store({"proxy": " http://legacy.example:8080 "})
         with tmp_dir:
             expected_default = copy.deepcopy(DEFAULT_PROXY_RUNTIME)
             runtime = store.get_proxy_runtime_settings()
             self.assertEqual(runtime, expected_default)
-            self.assertEqual(store.get_proxy_settings(), "http://legacy.example:8080")
 
             expected_public = copy.deepcopy(expected_default)
             expected_public["clearance"]["has_cf_cookies"] = False
             expected_public["clearance"]["has_cf_clearance"] = False
             public_config = store.get()
-            self.assertEqual(public_config["proxy"], " http://legacy.example:8080 ")
+            self.assertNotIn("proxy", public_config)
             self.assertEqual(public_config["proxy_runtime"], expected_public)
             self.assertNotIn("auth-key", public_config)
 

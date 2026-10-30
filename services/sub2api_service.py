@@ -88,6 +88,10 @@ class Sub2APIConfig:
         return []
 
     def _save(self) -> None:
+        # 取舍说明（审计 B-中8 / §7 决策项 5）：sub2api 服务器的 email/password/api_key
+        # 以明文 JSON 存盘。输出侧已在 api 层 sanitize（剔除 password/api_key），
+        # 存储侧维持明文现状：本地部署场景下引入加密的复杂度大于收益，且密钥管理
+        # 本身会引入新的明文锚点。
         self._store_file.parent.mkdir(parents=True, exist_ok=True)
         self._store_file.write_text(
             json.dumps(self._servers, ensure_ascii=False, indent=2) + "\n",

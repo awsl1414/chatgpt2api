@@ -183,7 +183,6 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
     auto_relogin_after_refresh: Boolean(config.auto_relogin_after_refresh),
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
-    proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url: typeof config.base_url === "string" ? config.base_url : "",
     global_system_prompt: String(config.global_system_prompt || ""),
     default_upstream_model_name: String(config.default_upstream_model_name || "gpt-5-5"),
@@ -309,7 +308,6 @@ type SettingsStore = {
   setAutoRemoveRateLimitedAccounts: (value: boolean) => void;
   setAutoReloginAfterRefresh: (value: boolean) => void;
   setLogLevel: (level: string, enabled: boolean) => void;
-  setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setGlobalSystemPrompt: (value: string) => void;
   setDefaultUpstreamModelName: (value: string) => void;
@@ -450,7 +448,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
         auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
         auto_relogin_after_refresh: Boolean(config.auto_relogin_after_refresh),
-        proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         global_system_prompt: String(config.global_system_prompt || "").trim(),
         default_upstream_model_name: String(config.default_upstream_model_name || "gpt-5-5").trim() || "gpt-5-5",
@@ -595,20 +592,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       if (enabled) levels.add(level);
       else levels.delete(level);
       return { config: { ...state.config, log_levels: Array.from(levels) } };
-    });
-  },
-
-  setProxy: (value) => {
-    set((state) => {
-      if (!state.config) {
-        return {};
-      }
-      return {
-        config: {
-          ...state.config,
-          proxy: value,
-        },
-      };
     });
   },
 

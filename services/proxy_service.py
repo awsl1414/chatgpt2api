@@ -182,7 +182,6 @@ class ProxySettingsStore:
 
         account_proxy = _clean((account or {}).get("proxy") if isinstance(account, dict) else "")
         explicit_proxy = _clean(proxy)
-        legacy_proxy = _clean(self._config.get_proxy_settings())
 
         runtime_proxy = ""
         runtime_proxy_source = "runtime"
@@ -202,9 +201,6 @@ class ProxySettingsStore:
         elif explicit_proxy:
             selected_proxy = explicit_proxy
             source = "explicit"
-        elif legacy_proxy:
-            selected_proxy = legacy_proxy
-            source = "global"
 
         return ProxyRuntimeProfile(
             proxy_url=normalize_proxy_url(selected_proxy),
