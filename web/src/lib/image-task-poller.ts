@@ -10,7 +10,7 @@
 
 import { toast } from "sonner";
 
-import { createImageEditTask, createImageGenerationTask, fetchImageTasks, type ImageTask } from "@/lib/api";
+import { createImageEditTask, createImageGenerationTask, fetchImageTasks, type ImageTask } from "@/lib/api/image-tasks";
 import { dataUrlToFile } from "@/lib/image-reference";
 import { deriveTurnStatus, taskDataToStoredImage } from "@/lib/image-task-state";
 import { useImageConversationsStore } from "@/store/image-conversations";

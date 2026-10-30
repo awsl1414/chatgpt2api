@@ -14,7 +14,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { deleteSystemLogs, fetchSystemLogs, type SystemLog } from "@/lib/api";
+import { deleteSystemLogs, fetchSystemLogs, type SystemLog } from "@/lib/api/logs";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 const LogType = {

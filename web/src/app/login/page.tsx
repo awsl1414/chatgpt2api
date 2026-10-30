@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { HeaderActions } from "@/components/header-actions";
-import { login } from "@/lib/api";
+import { login } from "@/lib/api/auth-keys";
 import { useRedirectIfAuthenticated } from "@/lib/use-auth-guard";
 import { getDefaultRouteForRole, setStoredAuthSession } from "@/store/auth";
 

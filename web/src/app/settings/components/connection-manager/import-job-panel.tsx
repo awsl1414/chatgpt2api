@@ -1,7 +1,7 @@
 "use client";
 
 import { Badge } from "@/components/ui/badge";
-import type { CPAImportJob } from "@/lib/api";
+import type { CPAImportJob } from "@/lib/api/cpa";
 
 /** 连接卡内的导入任务进度面板，CPA 与 Sub2API 共用 */
 export function ImportJobPanel({ job }: { job: CPAImportJob }) {

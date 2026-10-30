@@ -2,18 +2,17 @@
 
 import { create } from "zustand";
 
+import { type BackupSettings } from "@/lib/api/backups";
+import { syncImageStorage, testImageStorageConnection } from "@/lib/api/images";
 import {
   fetchSettingsConfig,
   fetchUpstreamModels,
-  syncImageStorage,
-  testImageStorageConnection,
   updateSettingsConfig,
-  type BackupSettings,
   type ImageStorageSettings,
   type ProxyRuntimeSettings,
   type SettingsConfig,
   type ThirdPartyAppsSettings,
-} from "@/lib/api";
+} from "@/lib/api/settings";
 import { actionError, type ActionResult } from "@/lib/action-result";
 import { buildSaveConfig, normalizeConfig, normalizeProxyRuntime, normalizeThirdPartyApps } from "@/lib/settings-normalize";
 

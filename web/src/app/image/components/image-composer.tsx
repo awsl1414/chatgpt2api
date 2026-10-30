@@ -7,7 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { imageModelLabel, isCodexImageModel, type ImageModel } from "@/lib/api";
+import { imageModelLabel, isCodexImageModel } from "@/lib/api/models";
+import type { ImageModel } from "@/lib/api/types";
 import { cn } from "@/lib/utils";
 
 type ImageComposerProps = {

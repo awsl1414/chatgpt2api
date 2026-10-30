@@ -4,7 +4,7 @@ import { create } from "zustand";
 import localforage from "localforage";
 
 import { pickFallbackConversationId, sortImageConversations } from "@/lib/image-utils";
-import type { ImageModel } from "@/lib/api";
+import type { ImageModel } from "@/lib/api/types";
 
 export type ImageConversationMode = "generate" | "edit";
 

@@ -14,7 +14,8 @@ import { Button } from "@/components/ui/button";
 import { usePersistedComposerOptions } from "@/hooks/use-persisted-composer-options";
 import { useReferenceImages } from "@/hooks/use-reference-images";
 import { useScrollRestore } from "@/hooks/use-scroll-restore";
-import { fetchAccounts, resumeImagePoll } from "@/lib/api";
+import { fetchAccounts } from "@/lib/api/accounts";
+import { resumeImagePoll } from "@/lib/api/image-tasks";
 import { ACTIVE_CONVERSATION_STORAGE_KEY } from "@/lib/image-storage-keys";
 import { abortAllConversationQueues, isConversationQueueActive, runConversationQueue } from "@/lib/image-task-poller";
 import {

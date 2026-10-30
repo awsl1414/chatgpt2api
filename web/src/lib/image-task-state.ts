@@ -3,7 +3,8 @@
  * 以及会话历史恢复与任务批量同步。除 IO（fetchImageTasks / saveImageConversations）外均为纯函数，可单测。
  */
 
-import { fetchImageTasks, type ImageModel, type ImageTask } from "@/lib/api";
+import { fetchImageTasks, type ImageTask } from "@/lib/api/image-tasks";
+import type { ImageModel } from "@/lib/api/types";
 import { buildConversationTitle, createId } from "@/lib/image-utils";
 import {
   saveImageConversations,

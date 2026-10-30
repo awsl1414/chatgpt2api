@@ -24,7 +24,7 @@ import {
   type Sub2APIRemoteAccount,
   type Sub2APIRemoteGroup,
   type Sub2APIServer,
-} from "@/lib/api";
+} from "@/lib/api/sub2api";
 import { actionError } from "@/lib/action-result";
 
 import type { ConnectionAdapter, ConnectionFormContext } from "./types";

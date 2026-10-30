@@ -3,7 +3,8 @@
  * 全部为无副作用的纯函数（除 createId 使用随机数），便于单测。
  */
 
-import type { Account, ImageModel } from "@/lib/api";
+import type { Account } from "@/lib/api/accounts";
+import type { ImageModel } from "@/lib/api/types";
 import type { ImageConversation } from "@/store/image-conversations";
 
 /** 生成带时间戳前缀的短随机 ID，用于会话与轮次 */

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Sheet, SheetClose, SheetContent, SheetFooter, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import webConfig from "@/constants/common-env";
-import { fetchThirdPartyApps, type ThirdPartyAppsSettings } from "@/lib/api";
+import { fetchThirdPartyApps, type ThirdPartyAppsSettings } from "@/lib/api/settings";
 import { getValidatedAuthSession } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 import { clearStoredAuthSession, type StoredAuthSession } from "@/store/auth";

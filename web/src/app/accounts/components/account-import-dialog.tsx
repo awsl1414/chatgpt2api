@@ -1,22 +1,15 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useRef, useState, type ChangeEvent } from "react";
-import {
-  ArrowLeft,
-  Copy,
-  ExternalLink,
-  FileJson,
-  FileText,
-  Files,
-  KeyRound,
-  LoaderCircle,
-  LogIn,
-  ServerCog,
-  Upload,
-} from "lucide-react";
+import { useState } from "react";
+import { FileJson, Files, KeyRound, LoaderCircle, LogIn, ServerCog, Upload } from "lucide-react";
 import { toast } from "sonner";
 
+import { AccountJsonPanel, type AccountJsonParseResult } from "@/app/accounts/components/import-panels/account-json-panel";
+import { CodexAuthPanel } from "@/app/accounts/components/import-panels/codex-auth-panel";
+import { OAuthPanel } from "@/app/accounts/components/import-panels/oauth-panel";
+import { SessionPanel } from "@/app/accounts/components/import-panels/session-panel";
+import { TokenPanel } from "@/app/accounts/components/import-panels/token-panel";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -27,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Textarea } from "@/components/ui/textarea";
+import { getCodexAuthAccount, getSessionAccessToken, splitTokens } from "@/lib/account-import-parse";
 import {
   createAccounts,
   finishOAuthLogin,
@@ -35,7 +28,7 @@ import {
   type Account,
   type AccountImportPayload,
   type OAuthLoginStartResponse,
-} from "@/lib/api";
+} from "@/lib/api/accounts";
 import { cn } from "@/lib/utils";
 
 type ImportMethod = "menu" | "token" | "session" | "codex-auth" | "account-json" | "oauth";
@@ -45,134 +38,14 @@ type AccountImportDialogProps = {
   onImported: (items: Account[]) => void;
 };
 
-type PendingAccountJsonImport = {
-  tokens: string[];
-  accounts: AccountImportPayload[];
-  parsedAccountCount: number;
-  errorCount: number;
-};
-
-const sessionUrl = "https://chatgpt.com/api/auth/session";
-
-function splitTokens(value: string) {
-  return value
-    .split(/\r?\n/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function getSessionAccessToken(value: unknown) {
-  const token = (value as { accessToken?: unknown })?.accessToken;
-  return typeof token === "string" ? token.trim() : "";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
-
-function getCodexTokenRecord(raw: Record<string, unknown>) {
-  // Codex CLI 的 auth.json 会把 token 放在嵌套的 tokens 对象里，需要兼容两种形状
-  const nested = isRecord(raw.tokens) ? raw.tokens : {};
-  const tokenValue = raw.access_token ?? raw.accessToken ?? nested.access_token ?? nested.accessToken;
-  const token = typeof tokenValue === "string" ? tokenValue.trim() : "";
-  return { nested, token };
-}
-
-function getAccountJsonAccount(value: unknown): AccountImportPayload | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const raw = value;
-  const { nested, token } = getCodexTokenRecord(raw);
-  if (!token) {
-    return null;
-  }
-
-  const payload: AccountImportPayload = {
-    ...nested,
-    ...raw,
-    access_token: token,
-    source_type: "codex",
-  };
-  delete payload.accessToken;
-  delete payload.tokens;
-  if (payload.type === "codex") {
-    payload.export_type = "codex";
-    delete payload.type;
-  }
-  return payload;
-}
-
-function getAccountJsonAccounts(value: unknown): AccountImportPayload[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => getAccountJsonAccount(item))
-      .filter((item): item is AccountImportPayload => Boolean(item));
-  }
-
-  const singleAccount = getAccountJsonAccount(value);
-  if (singleAccount) {
-    return [singleAccount];
-  }
-
-  if (value && typeof value === "object") {
-    const raw = value as Record<string, unknown>;
-    const nested = raw.accounts ?? raw.items;
-    if (Array.isArray(nested)) {
-      return nested
-        .map((item) => getAccountJsonAccount(item))
-        .filter((item): item is AccountImportPayload => Boolean(item));
-    }
-  }
-
-  return [];
-}
-
-function getCodexAuthAccount(value: unknown): AccountImportPayload | null {
-  if (!isRecord(value)) {
-    return null;
-  }
-  const raw = value;
-  const { nested, token } = getCodexTokenRecord(raw);
-  if (!token) {
-    return null;
-  }
-
-  const payload: AccountImportPayload = {
-    ...nested,
-    ...raw,
-    access_token: token,
-    export_type: "codex",
-    source_type: "codex",
-  };
-  delete payload.accessToken;
-  delete payload.tokens;
-  if (payload.type === "codex") {
-    delete payload.type;
-  }
-  return payload;
-}
-
-function readFileAsText(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(reader.error ?? new Error(`读取文件失败: ${file.name}`));
-    reader.readAsText(file);
-  });
-}
-
-function MethodCard({
-  title,
-  description,
-  icon: Icon,
-  onClick,
-}: {
+type MethodCardProps = {
   title: string;
   description: string;
   icon: typeof KeyRound;
   onClick: () => void;
-}) {
+};
+
+function MethodCard({ title, description, icon: Icon, onClick }: MethodCardProps) {
   return (
     <button
       type="button"
@@ -194,6 +67,31 @@ function MethodCard({
   );
 }
 
+// 各 method 的标题与描述映射
+const methodMeta: Record<Exclude<ImportMethod, "menu">, { title: string; description: string }> = {
+  token: {
+    title: "导入 Access Token",
+    description: "支持手动粘贴或从 TXT 文件导入，一行一个 Token。",
+  },
+  session: {
+    title: "导入 Session JSON",
+    description: "粘贴完整 Session JSON，系统会自动提取 accessToken。",
+  },
+  "codex-auth": {
+    title: "导入 Codex 认证 JSON",
+    description: "粘贴 Codex 认证 JSON，系统会按 codex 来源导入。",
+  },
+  oauth: {
+    title: "OAuth 登录已有账号",
+    description: "用浏览器跑一遍 OpenAI 标准 OAuth，拿回 refresh_token 后系统会自动续期。",
+  },
+  "account-json": {
+    title: "导入账号 JSON",
+    description: "支持读取本项目导出的单账号对象或全部账号数组，并在提交前做数量确认。",
+  },
+};
+
+// 账号导入 Dialog：只负责 method 导航、各面板状态持有与提交；面板 UI 见 import-panels/
 export function AccountImportDialog({ disabled, onImported }: AccountImportDialogProps) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -202,15 +100,12 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
   const [sessionInput, setSessionInput] = useState("");
   const [codexAuthInput, setCodexAuthInput] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pendingAccountJsonImport, setPendingAccountJsonImport] = useState<PendingAccountJsonImport | null>(null);
+  const [pendingAccountJsonImport, setPendingAccountJsonImport] = useState<AccountJsonParseResult | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [oauthEmailHint, setOauthEmailHint] = useState("");
   const [oauthSession, setOauthSession] = useState<OAuthLoginStartResponse | null>(null);
   const [oauthCallbackInput, setOauthCallbackInput] = useState("");
   const [oauthStarting, setOauthStarting] = useState(false);
-
-  const txtInputRef = useRef<HTMLInputElement | null>(null);
-  const accountJsonInputRef = useRef<HTMLInputElement | null>(null);
 
   const resetState = () => {
     setMethod("menu");
@@ -342,34 +237,6 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
     }
   };
 
-  const handleTxtSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) {
-      return;
-    }
-
-    try {
-      const content = await readFileAsText(file);
-      const tokens = splitTokens(content);
-
-      if (tokens.length === 0) {
-        toast.error("TXT 文件里没有读取到有效 Token");
-        return;
-      }
-
-      setTokenInput((prev) => {
-        const next = [...splitTokens(prev), ...tokens];
-        return next.join("\n");
-      });
-      toast.success(`已从 ${file.name} 读取 ${tokens.length} 个 Token`);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "读取 TXT 文件失败";
-      toast.error(message);
-    }
-  };
-
   const handleImportSessionJson = async () => {
     if (!sessionInput.trim()) {
       toast.error("请先粘贴完整 Session JSON");
@@ -414,315 +281,73 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
     }
   };
 
-  const handleAccountJsonSelected = async (event: ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-
-    if (files.length === 0) {
-      return;
-    }
-
-    try {
-      const results = await Promise.all(
-        files.map(async (file) => {
-          const raw = await readFileAsText(file);
-          const parsed = JSON.parse(raw) as unknown;
-          const accounts = getAccountJsonAccounts(parsed);
-          return {
-            accounts,
-          };
-        }),
-      );
-
-      const accounts = results.flatMap((item) => item.accounts);
-      const tokens = accounts.map((item) => item.access_token);
-      const parsedAccountCount = accounts.length;
-      const errorCount = results.filter((item) => item.accounts.length === 0).length;
-
-      if (parsedAccountCount === 0) {
-        toast.error("这些账号 JSON 文件里没有读取到可用 access_token");
-        return;
-      }
-
-      setPendingAccountJsonImport({
-        tokens,
-        accounts,
-        parsedAccountCount,
-        errorCount,
-      });
-      setConfirmOpen(true);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "读取账号 JSON 文件失败";
-      toast.error(message);
-    }
+  const handleAccountJsonParsed = (result: AccountJsonParseResult) => {
+    setPendingAccountJsonImport(result);
+    setConfirmOpen(true);
   };
+
+  const footerDisabled = disabled || isSubmitting;
 
   const renderMethodBody = () => {
     if (method === "token") {
-      const tokenCount = splitTokens(tokenInput).length;
-
       return (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <button
-              type="button"
-              onClick={() => setMethod("menu")}
-              className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
-            >
-              <ArrowLeft className="size-4" />
-              返回导入方式
-            </button>
-            <span className="text-xs text-stone-400">当前识别 {tokenCount} 个 Token</span>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">Access Token 列表</label>
-            <Textarea
-              placeholder="每行一个 Access Token..."
-              value={tokenInput}
-              onChange={(event) => setTokenInput(event.target.value)}
-              className="min-h-56 resize-none rounded-xl border-stone-200"
-            />
-          </div>
-          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-4">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div className="space-y-1">
-                <div className="text-sm font-medium text-stone-800">从 TXT 文件导入</div>
-                <div className="text-sm leading-6 text-stone-500">支持 `.txt`，文件内容也是一行一个 Token。</div>
-              </div>
-              <Button
-                type="button"
-                variant="outline"
-                className="rounded-xl border-stone-200 bg-white"
-                onClick={() => txtInputRef.current?.click()}
-                disabled={isSubmitting}
-              >
-                <FileText className="size-4" />
-                选择 TXT
-              </Button>
-            </div>
-          </div>
-          <input
-            ref={txtInputRef}
-            type="file"
-            accept=".txt,text/plain"
-            className="hidden"
-            onChange={(event) => void handleTxtSelected(event)}
-          />
-        </div>
+        <TokenPanel
+          value={tokenInput}
+          onChange={setTokenInput}
+          isSubmitting={isSubmitting}
+          onBack={() => setMethod("menu")}
+        />
       );
     }
 
     if (method === "session") {
       return (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setMethod("menu")}
-            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
-          >
-            <ArrowLeft className="size-4" />
-            返回导入方式
-          </button>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-600">
-            打开
-            {" "}
-            <a
-              href={sessionUrl}
-              target="_blank"
-              rel="noreferrer"
-              className="inline-flex items-center gap-1 font-medium text-stone-900 underline underline-offset-4"
-            >
-              {sessionUrl}
-              <ExternalLink className="size-3.5" />
-            </a>
-            ，复制页面返回的完整 JSON，系统会自动提取其中的 `accessToken` 导入。
-          </div>
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-            <div className="font-medium">风险提示</div>
-            <div>
-              不要使用自己的大号，尽量使用不常用的小号进行导入，避免出现封号风险。本项目不承担任何封号风险责任。
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">Session JSON</label>
-            <Textarea
-              placeholder='粘贴完整 JSON，例如包含 "accessToken" 的对象...'
-              value={sessionInput}
-              onChange={(event) => setSessionInput(event.target.value)}
-              className="min-h-56 resize-none rounded-xl border-stone-200 font-mono text-xs"
-            />
-          </div>
-        </div>
+        <SessionPanel
+          value={sessionInput}
+          onChange={setSessionInput}
+          onBack={() => setMethod("menu")}
+        />
       );
     }
 
     if (method === "oauth") {
       return (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setMethod("menu")}
-            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
-          >
-            <ArrowLeft className="size-4" />
-            返回导入方式
-          </button>
-          <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm leading-6 text-stone-600 space-y-2">
-            <div className="font-medium text-stone-800">操作步骤</div>
-            <ol className="list-decimal pl-5 space-y-1">
-              <li>（可选）填写你 ChatGPT 账号的邮箱，登录页会预填。</li>
-              <li>点击下方"打开授权页面"，在新标签里登录自己的 ChatGPT 账号。</li>
-              <li>登录完成后浏览器会跳到 <code className="rounded bg-stone-200 px-1">platform.openai.com/auth/callback?code=...</code>。立刻从地址栏复制整段 URL（或开 F12 在 Network 里抓到 callback 那一行，右键 Copy → Copy URL）。</li>
-              <li>把 callback URL 粘到下面输入框，点"完成导入"。</li>
-            </ol>
-          </div>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">邮箱（可选预填）</label>
-            <input
-              type="email"
-              placeholder="you@example.com"
-              value={oauthEmailHint}
-              onChange={(event) => setOauthEmailHint(event.target.value)}
-              disabled={Boolean(oauthSession) || oauthStarting}
-              className="w-full rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm outline-none focus:border-stone-400"
-            />
-          </div>
-          {!oauthSession ? (
-            <Button
-              type="button"
-              className="h-10 rounded-xl bg-stone-950 text-white hover:bg-stone-800"
-              onClick={() => void handleStartOAuth()}
-              disabled={oauthStarting}
-            >
-              {oauthStarting ? <LoaderCircle className="size-4 animate-spin" /> : <ExternalLink className="size-4" />}
-              打开授权页面
-            </Button>
-          ) : (
-            <div className="space-y-3">
-              <div className="rounded-2xl border border-stone-200 bg-white p-3 text-xs leading-6 text-stone-600 break-all font-mono">
-                {oauthSession.authorize_url}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl border-stone-200 bg-white"
-                  onClick={() => void handleCopyAuthorizeUrl()}
-                >
-                  <Copy className="size-4" />
-                  复制授权 URL
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl border-stone-200 bg-white"
-                  onClick={() => window.open(oauthSession.authorize_url, "_blank", "noopener,noreferrer")}
-                >
-                  <ExternalLink className="size-4" />
-                  再次打开
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  className="rounded-xl border-stone-200 bg-white"
-                  onClick={() => {
-                    setOauthSession(null);
-                    setOauthCallbackInput("");
-                  }}
-                >
-                  重新生成
-                </Button>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700">粘贴 callback URL（或仅 code）</label>
-                <Textarea
-                  placeholder={"https://platform.openai.com/auth/callback?code=...&state=..."}
-                  value={oauthCallbackInput}
-                  onChange={(event) => setOauthCallbackInput(event.target.value)}
-                  className="min-h-24 resize-none rounded-xl border-stone-200 font-mono text-xs"
-                />
-              </div>
-            </div>
-          )}
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-900">
-            <div className="font-medium">注意</div>
-            <div>
-              授权码（code）只能使用一次。如果浏览器的 callback 页加载完成、显示了 OpenAI 的错误页，那 code 大概率已经被消耗，
-              请点击"重新生成"再走一次。整个流程在 10 分钟内完成即可。
-            </div>
-          </div>
-        </div>
+        <OAuthPanel
+          emailHint={oauthEmailHint}
+          onEmailHintChange={setOauthEmailHint}
+          session={oauthSession}
+          callbackInput={oauthCallbackInput}
+          onCallbackInputChange={setOauthCallbackInput}
+          starting={oauthStarting}
+          onStart={() => void handleStartOAuth()}
+          onCopyAuthorizeUrl={() => void handleCopyAuthorizeUrl()}
+          onReset={() => {
+            setOauthSession(null);
+            setOauthCallbackInput("");
+          }}
+          onBack={() => setMethod("menu")}
+        />
       );
     }
 
     if (method === "account-json") {
       return (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setMethod("menu")}
-            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
-          >
-            <ArrowLeft className="size-4" />
-            返回导入方式
-          </button>
-          <div className="rounded-2xl border border-dashed border-stone-200 bg-stone-50 p-5">
-            <div className="space-y-2">
-              <div className="text-sm font-medium text-stone-800">选择本地账号 JSON 文件</div>
-              <div className="text-sm leading-6 text-stone-500">
-                支持本项目导出的单账号对象或全部账号数组，也兼容每个文件一个账号对象的 CPA JSON。
-                系统会自动提取 `access_token` 或 `accessToken`。
-              </div>
-            </div>
-            <Button
-              type="button"
-              className="mt-4 rounded-xl bg-stone-950 text-white hover:bg-stone-800"
-              onClick={() => accountJsonInputRef.current?.click()}
-              disabled={isSubmitting}
-            >
-              <Files className="size-4" />
-              选择 JSON 文件
-            </Button>
-          </div>
-          <input
-            ref={accountJsonInputRef}
-            type="file"
-            accept=".json,application/json"
-            multiple
-            className="hidden"
-            onChange={(event) => void handleAccountJsonSelected(event)}
-          />
-          {pendingAccountJsonImport ? (
-            <div className="rounded-2xl border border-stone-200 bg-white p-4 text-sm leading-6 text-stone-600">
-              最近一次读取到 {pendingAccountJsonImport.parsedAccountCount} 个 Token
-              {pendingAccountJsonImport.errorCount > 0 ? `，另有 ${pendingAccountJsonImport.errorCount} 个文件未提取成功` : ""}。
-            </div>
-          ) : null}
-        </div>
+        <AccountJsonPanel
+          isSubmitting={isSubmitting}
+          pending={pendingAccountJsonImport}
+          onParsed={handleAccountJsonParsed}
+          onBack={() => setMethod("menu")}
+        />
       );
     }
 
     if (method === "codex-auth") {
       return (
-        <div className="space-y-4">
-          <button
-            type="button"
-            onClick={() => setMethod("menu")}
-            className="inline-flex items-center gap-1 text-sm text-stone-500 transition hover:text-stone-800"
-          >
-            <ArrowLeft className="size-4" />
-            返回导入方式
-          </button>
-          <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700">Codex 认证 JSON</label>
-            <Textarea
-              placeholder='粘贴包含 "access_token"、"refresh_token"、"id_token" 的 Codex 认证 JSON...'
-              value={codexAuthInput}
-              onChange={(event) => setCodexAuthInput(event.target.value)}
-              className="min-h-64 resize-none rounded-xl border-stone-200 font-mono text-xs"
-            />
-          </div>
-        </div>
+        <CodexAuthPanel
+          value={codexAuthInput}
+          onChange={setCodexAuthInput}
+          onBack={() => setMethod("menu")}
+        />
       );
     }
 
@@ -782,8 +407,6 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
     );
   };
 
-  const footerDisabled = disabled || isSubmitting;
-
   return (
     <>
       <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -798,30 +421,12 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
         <DialogContent showCloseButton={false} className="rounded-2xl p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>
-              {method === "menu"
-                ? "导入账户"
-                : method === "token"
-                  ? "导入 Access Token"
-                  : method === "session"
-                    ? "导入 Session JSON"
-                    : method === "codex-auth"
-                      ? "导入 Codex 认证 JSON"
-                    : method === "oauth"
-                      ? "OAuth 登录已有账号"
-                      : "导入账号 JSON"}
+              {method === "menu" ? "导入账户" : methodMeta[method].title}
             </DialogTitle>
             <DialogDescription className="text-sm leading-6">
               {method === "menu"
                 ? "选择一种导入方式。导入成功后会自动拉取邮箱、类型和额度。"
-                : method === "token"
-                  ? "支持手动粘贴或从 TXT 文件导入，一行一个 Token。"
-                  : method === "session"
-                    ? "粘贴完整 Session JSON，系统会自动提取 accessToken。"
-                    : method === "codex-auth"
-                      ? "粘贴 Codex 认证 JSON，系统会按 codex 来源导入。"
-                    : method === "oauth"
-                      ? "用浏览器跑一遍 OpenAI 标准 OAuth，拿回 refresh_token 后系统会自动续期。"
-                      : "支持读取本项目导出的单账号对象或全部账号数组，并在提交前做数量确认。"}
+                : methodMeta[method].description}
             </DialogDescription>
           </DialogHeader>
 

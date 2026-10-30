@@ -1,5 +1,5 @@
+import type { BackupSettings } from "@/lib/api/backups";
 import type {
-  BackupSettings,
   ImageStorageMode,
   ImageStorageSettings,
   ProxyRuntimeClearanceMode,
@@ -7,7 +7,7 @@ import type {
   ProxyRuntimeSettings,
   SettingsConfig,
   ThirdPartyAppsSettings,
-} from "@/lib/api";
+} from "@/lib/api/settings";
 
 /**
  * 系统配置的规范化单一份实现。

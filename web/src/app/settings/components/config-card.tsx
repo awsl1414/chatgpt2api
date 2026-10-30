@@ -10,7 +10,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import type { ImageStorageMode } from "@/lib/api";
+import type { ImageStorageMode } from "@/lib/api/settings";
 import { toastActionResult } from "@/lib/action-result";
 
 import { useConfigStore } from "../store/config";
