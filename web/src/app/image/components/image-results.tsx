@@ -4,6 +4,7 @@ import { memo, useEffect, useRef, useState } from "react";
 import { Clock3, Download, EyeOff, LoaderCircle, RotateCcw, Sparkles, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { formatConversationTime } from "@/lib/image-utils";
 import { cn } from "@/lib/utils";
 import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
 
@@ -25,7 +26,6 @@ type ImageResultsProps = {
   onRetryImage: (conversationId: string, turnId: string, imageId: string) => void | Promise<void>;
   onTimeoutRetryContinue: (taskId: string) => void | Promise<void>;
   onDismissErrors: (conversationId: string, turnId: string) => void | Promise<void>;
-  formatConversationTime: (value: string) => string;
 };
 
 // Blob URL 缓存：避免 base64 超长字符串在 DOM 中，改用短小的 blob: URL
@@ -95,7 +95,6 @@ export function ImageResults({
   onRetryImage,
   onTimeoutRetryContinue,
   onDismissErrors,
-  formatConversationTime,
 }: ImageResultsProps) {
   const imageDimensionsRef = useRef<Record<string, string>>({});
   const [currentTime, setCurrentTime] = useState(Date.now());

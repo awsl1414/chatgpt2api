@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LoaderCircle, MessageSquarePlus, Pencil, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { formatConversationTime } from "@/lib/image-utils";
 import { cn } from "@/lib/utils";
 import { getImageConversationStats, type ImageConversation } from "@/store/image-conversations";
 
@@ -16,7 +17,6 @@ type ImageSidebarProps = {
   onSelectConversation: (id: string) => void;
   onDeleteConversation: (id: string) => void | Promise<void>;
   onRenameConversation: (id: string, title: string) => void | Promise<void>;
-  formatConversationTime: (value: string) => string;
   hideActionButtons?: boolean;
 };
 
@@ -29,7 +29,6 @@ export function ImageSidebar({
   onSelectConversation,
   onDeleteConversation,
   onRenameConversation,
-  formatConversationTime,
   hideActionButtons = false,
 }: ImageSidebarProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
