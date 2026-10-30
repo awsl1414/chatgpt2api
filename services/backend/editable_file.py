@@ -21,7 +21,7 @@ from PIL import Image
 
 from services.backend.context import BackendClient
 from services.backend.search import SEARCH_CONVERSATION_ID_RE, walk_dicts
-from utils.helper import ensure_ok, iter_sse_payloads, new_uuid
+from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid
 
 
 EDITABLE_FILE_MODEL = "gpt-5-5-thinking"

@@ -12,7 +12,7 @@ import time
 from typing import Any
 
 from services.backend.context import BackendClient
-from utils.helper import ensure_ok, iter_sse_payloads, new_uuid
+from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid
 
 SEARCH_MODEL = "gpt-5-5"
 SEARCH_TIMEOUT_SECS = 300.0

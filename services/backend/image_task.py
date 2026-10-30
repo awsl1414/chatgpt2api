@@ -20,7 +20,7 @@ from services.backend.context import BackendClient
 from services.backend.search import add_unique
 from services.config import config
 from services.errors import ImageContentPolicyError, ImagePollTimeoutError
-from utils.helper import ensure_ok
+from utils.helper import UpstreamHTTPError, ensure_ok
 from utils.log import logger
 
 FILE_SERVICE_ID_RE = re.compile(r"file-service://([A-Za-z0-9_-]+)")# 真正的图片文件 ID 格式：file_00000000 + 24位十六进制字符（共32字符）
