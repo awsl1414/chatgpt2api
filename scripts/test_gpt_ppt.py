@@ -1,3 +1,4 @@
+# 手动验证脚本：需要真实上游 / 本地运行中的服务，不作为 pytest 单元测试运行。
 from __future__ import annotations
 
 import json
@@ -9,7 +10,7 @@ from pathlib import Path
 from uuid import uuid4
 
 BASE_URL = "http://127.0.0.1:8000"
-PROMPT = "按原图位置拆分海报元素并合成可编辑 PSD，同时输出每个图层素材 zip。"
+PROMPT = "生成一份 2026 年 Q2 电商运营复盘 PPT，8 页以内，商务科技风，包含销售、用户、渠道、广告、618 活动和 Q3 规划。"
 BASE64_IMAGES: list[str] = []
 TIMEOUT_SECS = 600
 POLL_INTERVAL_SECS = 5
@@ -34,7 +35,7 @@ def request_json(method: str, path: str, payload: dict | None = None) -> dict:
 
 
 def main() -> None:
-    task = request_json("POST", "/v1/psd/generations", {
+    task = request_json("POST", "/v1/ppt/generations", {
         "client_task_id": str(uuid4()),
         "prompt": PROMPT,
         "base64_images": BASE64_IMAGES,

@@ -1,6 +1,14 @@
+# 手动验证脚本：需要真实上游 / 本地运行中的服务，不作为 pytest 单元测试运行。
 import json
+import sys
 import urllib.error
 import urllib.request
+from pathlib import Path
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from test.utils import BASE_URL, load_auth_key
 

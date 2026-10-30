@@ -1,4 +1,10 @@
+# 手动验证脚本：需要真实上游 / 本地运行中的服务，不作为 pytest 单元测试运行。
 from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from services.protocol import openai_v1_image_generations
 from test.utils import save_image

@@ -1,3 +1,4 @@
+# 手动验证脚本：需要真实上游 / 本地运行中的服务，不作为 pytest 单元测试运行。
 from __future__ import annotations
 
 import json

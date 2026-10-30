@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# 手动验证脚本：需要真实上游 / 本地运行中的服务，不作为 pytest 单元测试运行。
 # Test script: directly call https://chatgpt.com/backend-api/codex/responses to generate one 2K image.
 # Only edit ACCESS_TOKEN, then run: python codex_responses_image_test.py
 # Fixed request parameters:
