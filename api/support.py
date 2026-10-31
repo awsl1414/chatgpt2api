@@ -1,5 +1,5 @@
 """路由层公共支撑：鉴权（require_admin/require_identity）、响应脱敏、
-图片 base_url 解析、静态资源解析与限流账号巡检线程。
+图片 base_url 解析与静态资源解析。
 
 部署主密钥直接映射 admin 身份属对外 API 兼容例外（审计 §7 决策项 3）。
 """
@@ -7,14 +7,11 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
-from threading import Event, Thread
 
 from fastapi import HTTPException, Request
 
-from services.account_service import account_service
 from services.auth_service import auth_service
 from services.config import config
-from utils.log import logger
 
 BASE_DIR = Path(__file__).resolve().parents[1]
 WEB_DIST_DIR = BASE_DIR / "web_dist"
@@ -77,41 +74,6 @@ def sanitize_sub2api_server(server: dict | None) -> dict | None:
 
 def sanitize_sub2api_servers(servers: list[dict]) -> list[dict]:
     return [sanitized for server in servers if (sanitized := sanitize_sub2api_server(server)) is not None]
-
-
-def start_limited_account_watcher(stop_event: Event) -> Thread:
-    interval_seconds = config.refresh_account_interval_minute * 60
-
-    def worker() -> None:
-        while not stop_event.is_set():
-            try:
-                limited_tokens = account_service.list_limited_tokens()
-                normal_tokens = account_service.list_normal_tokens()
-                expiring_tokens = account_service.list_expiring_access_tokens()
-                keepalive_tokens = account_service.list_refresh_token_keepalive_tokens()
-                tokens = list(dict.fromkeys([*limited_tokens, *normal_tokens, *expiring_tokens]))
-                expiring_token_set = set(expiring_tokens)
-                keepalive_tokens = [token for token in keepalive_tokens if token not in expiring_token_set]
-                if tokens:
-                    logger.info({
-                        "event": "account_watcher_check",
-                        "limited": len(limited_tokens),
-                        "normal": len(normal_tokens),
-                        "expiring_access": len(expiring_tokens),
-                    })
-                    account_service.refresh_accounts(tokens)
-                if keepalive_tokens:
-                    logger.info({"event": "account_watcher_keepalive", "count": len(keepalive_tokens)})
-                    result = account_service.keepalive_refresh_tokens(keepalive_tokens)
-                    if result.get("errors"):
-                        logger.warning({"event": "account_watcher_keepalive_errors", "errors": result["errors"]})
-            except Exception as exc:
-                logger.error({"event": "account_watcher_failed", "error": str(exc)})
-            stop_event.wait(interval_seconds)
-
-    thread = Thread(target=worker, name="account-watcher", daemon=True)
-    thread.start()
-    return thread
 
 
 def resolve_web_asset(requested_path: str) -> Path | None:

@@ -14,6 +14,7 @@ model_service、cpa_service 等 10+ 模块）的 import 路径不变。
 """
 from __future__ import annotations
 
+from threading import Event, Thread
 from typing import Any
 
 from services.account.models import (
@@ -35,6 +36,7 @@ from services.remote_info import fetch_remote_info as _fetch_remote_info
 from services.storage.base import StorageBackend
 from utils.helper import anonymize_token
 from utils.jwt import token_expires_in
+from utils.log import logger
 
 
 def _build_refresh_initial(total: int) -> dict:
@@ -343,3 +345,47 @@ class AccountService:
 
 
 account_service = AccountService(config.get_storage_backend())
+
+
+def start_limited_account_watcher(stop_event: Event) -> Thread:
+    """启动限流账号巡检后台线程，按配置间隔自动刷新与 keepalive。
+
+    巡检范围：限流/正常/临期 access_token 合并去重后批量刷新；keepalive
+    刷新 token 排除临期集合避免重复刷新。巡检异常只记日志，不中断循环。
+    返回守护线程引用，由调用方（应用 lifespan）管理停止事件。
+
+    调度编排属 service 层职责（审计 B-中2），与 image_service 的
+    start_image_cleanup_scheduler 同一模式。
+    """
+    interval_seconds = config.refresh_account_interval_minute * 60
+
+    def worker() -> None:
+        while not stop_event.is_set():
+            try:
+                limited_tokens = account_service.list_limited_tokens()
+                normal_tokens = account_service.list_normal_tokens()
+                expiring_tokens = account_service.list_expiring_access_tokens()
+                keepalive_tokens = account_service.list_refresh_token_keepalive_tokens()
+                tokens = list(dict.fromkeys([*limited_tokens, *normal_tokens, *expiring_tokens]))
+                expiring_token_set = set(expiring_tokens)
+                keepalive_tokens = [token for token in keepalive_tokens if token not in expiring_token_set]
+                if tokens:
+                    logger.info({
+                        "event": "account_watcher_check",
+                        "limited": len(limited_tokens),
+                        "normal": len(normal_tokens),
+                        "expiring_access": len(expiring_tokens),
+                    })
+                    account_service.refresh_accounts(tokens)
+                if keepalive_tokens:
+                    logger.info({"event": "account_watcher_keepalive", "count": len(keepalive_tokens)})
+                    result = account_service.keepalive_refresh_tokens(keepalive_tokens)
+                    if result.get("errors"):
+                        logger.warning({"event": "account_watcher_keepalive_errors", "errors": result["errors"]})
+            except Exception as exc:
+                logger.error({"event": "account_watcher_failed", "error": str(exc)})
+            stop_event.wait(interval_seconds)
+
+    thread = Thread(target=worker, name="account-watcher", daemon=True)
+    thread.start()
+    return thread
