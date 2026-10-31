@@ -4,7 +4,6 @@ import copy
 from dataclasses import dataclass
 import json
 import os
-import sys
 from pathlib import Path
 import time
 
@@ -316,10 +315,7 @@ def _read_json_object(path: Path, *, name: str) -> dict[str, object]:
     if not path.exists():
         return {}
     if path.is_dir():
-        print(
-            f"Warning: {name} at '{path}' is a directory, ignoring it and falling back to other configuration sources.",
-            file=sys.stderr,
-        )
+        logger.warning({"event": "config_path_is_directory", "name": name, "path": str(path)})
         return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))

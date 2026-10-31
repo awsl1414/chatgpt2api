@@ -340,7 +340,6 @@ def iter_conversation_payloads(payloads: Iterator[str], history_text: str = "",
     history_messages = history_messages or []
     history_index = 0
     for payload in payloads:
-        # print(f"[upstream_sse] {payload}", flush=True)
         if not payload:
             continue
         if payload == "[DONE]":
