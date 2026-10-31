@@ -5,12 +5,13 @@ import json
 from typing import Any
 
 from sqlalchemy import Column, String, Text, create_engine, Integer, text
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from services.storage.base import StorageBackend
 
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    """所有 ORM 模型的声明式基类（SQLAlchemy 2.0 风格）。"""
 
 
 class AccountModel(Base):
