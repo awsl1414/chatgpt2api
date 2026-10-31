@@ -262,3 +262,15 @@ class ModelUnavailableError(DomainError):
 
     status_code = 502
 
+
+class QuotaExhaustedError(DomainError):
+    """账号池无可用生图额度。
+
+    语义：不是单个账号失效，而是候选池内所有账号的生图额度均已耗尽
+    （无可分配生图槽位），由 AccountPool 在候选耗尽时抛出。该异常不可
+    通过换账号重试恢复，对外统一映射为 429 insufficient_quota，错误
+    响应体与历史 RuntimeError 时代保持逐字节一致。
+    """
+
+    status_code = 429
+

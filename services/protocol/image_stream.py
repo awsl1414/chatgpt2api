@@ -28,6 +28,7 @@ from services.errors import (
     ImageContentPolicyError,
     ImageGenerationError,
     ImagePollTimeoutError,
+    QuotaExhaustedError,
     image_stream_error_message,
     is_connection_timeout_error,
     is_token_invalid_error,
@@ -730,7 +731,10 @@ def _generate_single_image(
                 source_type="codex" if codex_model else None,
                 plan_types=("plus", "team", "pro") if codex_model and not plan_type else None,
             )
-        except RuntimeError as exc:
+        except (RuntimeError, QuotaExhaustedError) as exc:
+            # 额度耗尽（QuotaExhaustedError）沿用旧 RuntimeError 的包装路径：
+            # 原异常经 __cause__ 保留，log_service._image_error_response 据此
+            # 映射 429 insufficient_quota，对外响应体保持逐字节不变
             raise ImageGenerationError(str(exc) or "image generation failed", account_email=account_email) from exc
 
         emitted_for_token = False

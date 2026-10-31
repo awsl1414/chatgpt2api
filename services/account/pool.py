@@ -40,7 +40,7 @@ from services.account.models import (
     timestamp_to_iso,
 )
 from services.config import DATA_DIR, config
-from services.errors import ModelUnavailableError
+from services.errors import ModelUnavailableError, QuotaExhaustedError
 from services.log_service import (
     LOG_TYPE_ACCOUNT,
     log_service,
@@ -552,7 +552,7 @@ class AccountPool:
         with self._image_slot_condition:
             while True:
                 if not self._list_ready_candidate_tokens(excluded_tokens, plan_type, source_type, plan_types):
-                    raise RuntimeError(
+                    raise QuotaExhaustedError(
                         f"no available {plan_type or source_type or ''} image quota".replace("  ", " ").strip()
                         if plan_type or source_type else "no available image quota"
                     )
@@ -619,7 +619,7 @@ class AccountPool:
             ):
                 return str((account or {}).get("access_token") or access_token)
             self.release_image_slot(access_token)
-        raise RuntimeError(
+        raise QuotaExhaustedError(
             f"no available {plan_type or source_type or ''} image quota (tried {len(attempted_tokens)} tokens)".replace("  ", " ").strip()
             if plan_type or source_type else f"no available image quota (tried {len(attempted_tokens)} tokens)"
         )

@@ -7,7 +7,7 @@
   计数迁移、空 token 回退旧值
 - token 获取：`get_text_access_token` 轮询分配与刷新回调、模型路由缺失时
   的 ModelUnavailableError；`get_available_access_token` 远程校验回调的
-  成功 / 异常重试 / 配额耗尽 RuntimeError
+  成功 / 异常重试 / 配额耗尽 QuotaExhaustedError
 - 图片槽位并发（Condition 等待/唤醒）：并发上限占满时阻塞、释放后唤醒；
   `release_image_slot` 计数递减与归零清理
 - 结果回写：`mark_image_result` 成功/失败计数、额度归零转限流
@@ -24,7 +24,7 @@ import pytest
 
 from services.account.pool import AccountPool
 from services.config import config
-from services.errors import ModelUnavailableError
+from services.errors import ModelUnavailableError, QuotaExhaustedError
 from services.log_service import log_service
 
 
@@ -219,7 +219,7 @@ def test_get_text_access_token_unroutable_model_raises():
 
 def test_acquire_next_candidate_token_raises_without_candidates():
     pool = make_pool()
-    with pytest.raises(RuntimeError, match="no available image quota"):
+    with pytest.raises(QuotaExhaustedError, match="no available image quota"):
         pool._acquire_next_candidate_token()
 
 
@@ -314,7 +314,7 @@ def test_get_available_access_token_raises_when_all_candidates_rejected():
         return {"access_token": token, "status": "正常", "quota": 0}
 
     pool.verify_callback = verify
-    with pytest.raises(RuntimeError, match="no available image quota"):
+    with pytest.raises(QuotaExhaustedError, match="no available image quota"):
         pool.get_available_access_token()
 
 

@@ -20,7 +20,13 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from services.config import DATA_DIR
 from services.content_filter import check_request
-from services.errors import ContentFilterError, DomainError, ImageGenerationError, public_image_error_message
+from services.errors import (
+    ContentFilterError,
+    DomainError,
+    ImageGenerationError,
+    QuotaExhaustedError,
+    public_image_error_message,
+)
 from services.protocol.error_response import anthropic_error_response, openai_error_response
 from utils.helper import anthropic_sse_stream, sse_json_stream
 
@@ -188,9 +194,23 @@ def _request_excerpt(text: object, limit: int = 1000) -> str:
     return normalized[: limit - 1].rstrip() + "…"
 
 
+def _is_quota_exhausted_error(exc: Exception) -> bool:
+    """判定异常是否为账号池生图额度耗尽。
+
+    两种形态均视为额度耗尽：AccountPool 直接抛出的
+    QuotaExhaustedError，以及 image_stream 层按既有路径包装后
+    （``raise ImageGenerationError(...) from exc``）``__cause__``
+    仍指向 QuotaExhaustedError 的 ImageGenerationError。
+    """
+    if isinstance(exc, QuotaExhaustedError):
+        return True
+    return isinstance(getattr(exc, "__cause__", None), QuotaExhaustedError)
+
+
 def _image_error_response(exc: Exception) -> JSONResponse:
-    message = public_image_error_message(str(exc))
-    if "no available image quota" in message.lower():
+    if _is_quota_exhausted_error(exc):
+        # 对外 429 insufficient_quota 契约固定响应体（message 为常量，不带 tried N tokens 后缀），
+        # 由 test_v1_image_quota_contract.py 固化，改动需逐字节核对
         return openai_error_response(
             {
                 "error": {
@@ -202,6 +222,7 @@ def _image_error_response(exc: Exception) -> JSONResponse:
             },
             429,
         )
+    message = public_image_error_message(str(exc))
     if isinstance(exc, ImageGenerationError):
         return JSONResponse(status_code=int(exc.status_code), content=exc.to_openai_error())
     return openai_error_response(message, 502)
