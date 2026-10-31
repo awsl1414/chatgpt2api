@@ -211,7 +211,7 @@ const docs: ApiDoc[] = [
     output: [
       ["binary", "file", "返回 pptx/psd/zip 文件流。"],
     ],
-    example: (baseUrl: string, _key: string) => `curl ${baseUrl.replace(/\/v1$/, "")}/files/<file_path> -o result.zip`,
+    example: (baseUrl: string) => `curl ${baseUrl.replace(/\/v1$/, "")}/files/<file_path> -o result.zip`,
   },
 ];
 

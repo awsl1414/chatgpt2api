@@ -23,7 +23,7 @@ import { actionError } from "@/lib/action-result";
 
 import { ImportJobPanel } from "./import-job-panel";
 import { usePagination } from "@/hooks/use-pagination";
-import { PAGE_SIZE_OPTIONS, type ConnectionAdapter, type ConnectionRecord, type RemoteItemView } from "./types";
+import { PAGE_SIZE_OPTIONS, type ConnectionAdapter, type ConnectionRecord } from "./types";
 
 type ConnectionManagerProps<TConn extends ConnectionRecord, TForm, TItem> = {
   adapter: ConnectionAdapter<TConn, TForm, TItem>;
