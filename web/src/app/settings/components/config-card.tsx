@@ -133,7 +133,7 @@ export function ConfigCard() {
               </SelectContent>
             </Select>
             <p className="text-xs text-stone-500">
-              gpt-image-2 发起图片请求时使用的上游模型名称，选项来自系统当前可用模型目录，默认 gpt-5-5。
+              gpt-image-2 发起图片请求时使用的上游模型名称，选项来自系统当前可用模型目录，默认 gpt-6-thinking。
               {config?.default_upstream_model_name && !upstreamModelOptions.includes(config.default_upstream_model_name)
                 ? "（当前配置值不在目录中，已自动保留为选项）"
                 : ""}

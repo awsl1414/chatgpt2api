@@ -173,7 +173,7 @@ export function normalizeConfig(config: SettingsConfig): SettingsConfig {
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     base_url: typeof config.base_url === "string" ? config.base_url : "",
     global_system_prompt: String(config.global_system_prompt || ""),
-    default_upstream_model_name: String(config.default_upstream_model_name || "gpt-5-5"),
+    default_upstream_model_name: String(config.default_upstream_model_name || "gpt-6-thinking"),
     default_thinking_effort: defaultThinkingEffort,
     sensitive_words: Array.isArray(config.sensitive_words) ? config.sensitive_words : [],
     ai_review: {
@@ -240,7 +240,7 @@ export function buildSaveConfig(config: SettingsConfig): SettingsConfig {
     auto_relogin_after_refresh: Boolean(config.auto_relogin_after_refresh),
     base_url: String(config.base_url || "").trim(),
     global_system_prompt: String(config.global_system_prompt || "").trim(),
-    default_upstream_model_name: String(config.default_upstream_model_name || "gpt-5-5").trim() || "gpt-5-5",
+    default_upstream_model_name: String(config.default_upstream_model_name || "gpt-6-thinking").trim() || "gpt-6-thinking",
     default_thinking_effort: THINKING_EFFORTS.includes(config.default_thinking_effort as (typeof THINKING_EFFORTS)[number])
       ? config.default_thinking_effort
       : "auto",

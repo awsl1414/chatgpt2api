@@ -29,7 +29,7 @@
 | `base_url` | string | `""` | — | 对外服务的基础 URL；可被环境变量 `CHATGPT2API_BASE_URL` 覆盖 |
 | `sensitive_words` | string[] | `[]` | — | 敏感词列表，命中后触发内容过滤 |
 | `global_system_prompt` | string | `""` | — | 注入到所有会话的全局 system prompt |
-| `default_upstream_model_name` | string | `"gpt-5-5"` | — | 客户端未指定模型时使用的上游模型 |
+| `default_upstream_model_name` | string | `"gpt-6-thinking"` | — | 客户端未指定模型时使用的上游模型 |
 | `default_thinking_effort` | string | `"auto"` | — | 默认思考力度，可选 `auto`/`standard`/`extended`/`max` |
 
 ## `proxy_runtime` — 稳定代理运行时

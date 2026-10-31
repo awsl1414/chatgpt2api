@@ -33,7 +33,7 @@ describe("normalizeConfig 空配置默认值", () => {
     expect(config.image_check_before_hit_enabled).toBe(true);
     expect(config.image_remove_conversation_after_result).toBe(false);
     expect(config.auto_remove_invalid_accounts).toBe(false);
-    expect(config.default_upstream_model_name).toBe("gpt-5-5");
+    expect(config.default_upstream_model_name).toBe("gpt-6-thinking");
     expect(config.default_thinking_effort).toBe("auto");
     expect(config.base_url).toBe("");
     expect(config.log_levels).toEqual([]);
@@ -133,7 +133,7 @@ describe("buildSaveConfig 收口", () => {
     } as SettingsConfig);
     expect(saved.base_url).toBe("http://x");
     expect(saved.global_system_prompt).toBe("prompt");
-    expect(saved.default_upstream_model_name).toBe("gpt-5-5");
+    expect(saved.default_upstream_model_name).toBe("gpt-6-thinking");
     expect(saved.sensitive_words).toEqual(["a", "b"]);
     expect(saved.ai_review?.base_url).toBe("url");
   });
