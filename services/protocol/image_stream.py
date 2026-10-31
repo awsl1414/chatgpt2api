@@ -381,56 +381,66 @@ def _build_image_result(
     return None
 
 
-def stream_image_outputs(
-        backend: OpenAIBackendAPI,
-        request: ConversationRequest,
-        index: int = 1,
-        total: int = 1,
-) -> Iterator[ImageOutput]:
-    """消费生图对话 SSE 流，产出 progress / message / result 事件。
+@dataclass
+class _StreamState:
+    """`stream_image_outputs` 轮询前置判定段的产物，供后续轮询与结果组装复用。"""
 
-    按四段组织（行为与事件产出顺序与拆分前完全一致）：
-    1. 准备对话：消费 conversation_events，透传进度事件并收集最终会话状态；
-    2. 轮询前置判定：blocked / 纯文本回复判定、conversation_id 恢复、tasks 预检；
-    3. 轮询：首次解析图片 URL，文本回复与兜底场景按退避重试轮询；
-    4. 结果组装：下载字节并组装 result 事件，失败时产出明确的 message 事件。
+    conversation_id: str
+    file_ids: list[str]
+    sediment_ids: list[str]
+    message: str
+    should_poll_for_image: bool
+    is_text_reply: bool
+    poll_timeout: int
+
+
+def _progress_output_for_event(
+    event: dict[str, Any],
+    request: ConversationRequest,
+    index: int,
+    total: int,
+) -> ImageOutput | None:
+    """把单条 SSE 事件映射为进度 ImageOutput；非进度事件返回 None。
+
+    仅做映射，不消费事件流——进度事件的产出时序由调用方逐条 yield 决定。
     """
-    # —— 段 1：准备对话 ——
-    last: dict[str, Any] = {}
-    for event in conversation_events(
-            backend,
-            prompt=request.prompt,
+    if event.get("type") == "conversation.delta":
+        return ImageOutput(
+            kind="progress",
             model=request.model,
-            images=request.images or [],
-            size=request.size,
-            quality=request.quality,
-            size_enabled=request.size_enabled,
-    ):
-        last = event
-        if event.get("type") == "conversation.delta":
-            yield ImageOutput(
-                kind="progress",
-                model=request.model,
-                index=index,
-                total=total,
-                text=str(event.get("delta") or ""),
-                upstream_event_type="conversation.delta",
-                conversation_id=str(event.get("conversation_id") or ""),
-            )
-            continue
-        if event.get("type") == "conversation.event":
-            raw = event.get("raw")
-            raw_type = str(raw.get("type") or "") if isinstance(raw, dict) else ""
-            yield ImageOutput(
-                kind="progress",
-                model=request.model,
-                index=index,
-                total=total,
-                upstream_event_type=raw_type,
-                conversation_id=str(event.get("conversation_id") or ""),
-            )
+            index=index,
+            total=total,
+            text=str(event.get("delta") or ""),
+            upstream_event_type="conversation.delta",
+            conversation_id=str(event.get("conversation_id") or ""),
+        )
+    if event.get("type") == "conversation.event":
+        raw = event.get("raw")
+        raw_type = str(raw.get("type") or "") if isinstance(raw, dict) else ""
+        return ImageOutput(
+            kind="progress",
+            model=request.model,
+            index=index,
+            total=total,
+            upstream_event_type=raw_type,
+            conversation_id=str(event.get("conversation_id") or ""),
+        )
+    return None
 
-    # —— 段 2：轮询前置判定 ——
+
+def _resolve_stream_state(
+    backend: OpenAIBackendAPI,
+    request: ConversationRequest,
+    last: dict[str, Any],
+    index: int,
+    total: int,
+) -> tuple[_StreamState | None, ImageOutput | None]:
+    """轮询前置判定段：解析会话状态、识别文本回复、恢复会话 ID 并做 tasks 预检。
+
+    返回 `(state, short_circuit)`：
+    - `short_circuit` 非 None 时表示应直接产出该 message 事件并结束，`state` 为 None；
+    - 否则 `state` 给出后续轮询所需的会话 ID、文件 ID 与超时配置。
+    """
     conversation_id = str(last.get("conversation_id") or "")
     file_ids = [str(item) for item in last.get("file_ids") or []]
     sediment_ids = [str(item) for item in last.get("sediment_ids") or []]
@@ -449,12 +459,10 @@ def stream_image_outputs(
         # 尝试从 /backend-api/tasks/ 获取详细错误信息
         detailed_error = _get_detailed_error_from_tasks(backend, conversation_id)
         error_text = detailed_error or message or "Image generation was rejected by upstream policy."
-        yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=error_text, conversation_id=conversation_id)
-        return
+        return None, ImageOutput(kind="message", model=request.model, index=index, total=total, text=error_text, conversation_id=conversation_id)
     should_poll_for_image = bool(request.images) or last.get("turn_use_case") == "image gen"
     if message and not file_ids and not sediment_ids and not should_poll_for_image:
-        yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=message, conversation_id=conversation_id)
-        return
+        return None, ImageOutput(kind="message", model=request.model, index=index, total=total, text=message, conversation_id=conversation_id)
 
     # 检测模型是否返回了文本描述（含 referenced_image_ids）而非实际生成图片
     # 这说明模型已发起图片生成工具调用，但 SSE 在工具完成前断开，
@@ -491,8 +499,7 @@ def stream_image_outputs(
                 "conversation_id": conversation_id,
                 "error": detailed_error,
             })
-            yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=detailed_error, conversation_id=conversation_id)
-            return
+            return None, ImageOutput(kind="message", model=request.model, index=index, total=total, text=detailed_error, conversation_id=conversation_id)
         if detailed_error and (should_poll_for_image or is_text_reply):
             logger.info({
                 "event": "image_task_error_skipped_for_poll",
@@ -513,105 +520,136 @@ def stream_image_outputs(
             "poll_timeout_secs": poll_timeout,
         })
 
-    # —— 段 3：轮询 ——
+    return _StreamState(
+        conversation_id=conversation_id,
+        file_ids=file_ids,
+        sediment_ids=sediment_ids,
+        message=message,
+        should_poll_for_image=should_poll_for_image,
+        is_text_reply=is_text_reply,
+        poll_timeout=poll_timeout,
+    ), None
+
+
+def _first_poll_image_urls(backend: OpenAIBackendAPI, state: _StreamState) -> list[str]:
+    """首次轮询解析图片 URL；文本回复场景下的内容策略/网络错误降级为空列表。"""
     try:
-        image_urls = backend.resolve_conversation_image_urls(
-            conversation_id, file_ids, sediment_ids, poll_timeout_secs=poll_timeout,
+        return backend.resolve_conversation_image_urls(
+            state.conversation_id, state.file_ids, state.sediment_ids, poll_timeout_secs=state.poll_timeout,
         )
     except (ImageContentPolicyError, ImagePollTimeoutError) as exc:
         # 当检测到文本回复时，task error 不应直接判定为内容策略违规，
         # 因为图片可能仍在后台异步生成中
-        if is_text_reply and isinstance(exc, ImageContentPolicyError):
+        if state.is_text_reply and isinstance(exc, ImageContentPolicyError):
             logger.warning({
                 "event": "image_text_reply_task_error_ignored",
-                "conversation_id": conversation_id,
+                "conversation_id": state.conversation_id,
                 "error": str(exc),
             })
-            image_urls = []
-        else:
-            raise
+            return []
+        raise
     except Exception as exc:
         # 当检测到文本回复时，首次轮询的临时网络错误不应直接中断，
         # 因为图片可能仍在后台异步生成中，后续 retry poll 会继续尝试。
-        if is_text_reply and conversation_id:
+        if state.is_text_reply and state.conversation_id:
             logger.warning({
                 "event": "image_text_reply_first_poll_error_ignored",
-                "conversation_id": conversation_id,
+                "conversation_id": state.conversation_id,
                 "error": repr(exc)[:300],
             })
-            image_urls = []
-        else:
-            raise
+            return []
+        raise
 
-    # —— 段 4：结果组装 ——
-    if image_urls:
-        output = _build_image_result(backend, request, image_urls, conversation_id, index, total)
-        if output:
-            yield output
-        return
 
-    if message:
-        # 检测模型是否返回了文本描述（含 referenced_image_ids）而非实际生成图片
-        # 这说明模型已发起图片生成工具调用，但 SSE 在工具完成前断开。
-        # 此时应再尝试轮询图片结果，而不是直接把文本当作最终输出。
-        # 当 is_text_reply 但 conversation_id 丢失时，尝试从最近对话列表恢复
-        if is_text_reply and not conversation_id:
-            conversation_id = _recover_conversation_id(
-                backend, request.prompt,
-                recovered_event="image_text_reply_conversation_id_recovered",
-                failed_event="image_text_reply_conversation_id_recovery_failed",
-                message_preview=message[:200],
-            ) or conversation_id
-        if is_text_reply and conversation_id:
-            logger.info({
-                "event": "image_model_text_reply_retry_poll",
-                "conversation_id": conversation_id,
-                "message_preview": message[:200],
-            })
-            # 文本回复场景下，图片可能需要 4-5 分钟才能异步生成完成。
-            # 使用 300s 超时并允许多次重试，避免因临时网络问题提前退出。
-            _poll_image_results_with_retry(
-                backend, conversation_id, file_ids, sediment_ids,
-                retry_poll_timeout=max(config.image_poll_timeout_secs, 300),
-                max_retries=3,
-                log_prefix="image_model_text_reply",
+def _message_branch_outputs(
+    backend: OpenAIBackendAPI,
+    request: ConversationRequest,
+    state: _StreamState,
+    index: int,
+    total: int,
+) -> Iterator[ImageOutput]:
+    """结果组装段（有 message 时）：文本回复场景再尝试轮询，最终产出 message 或 result。
+
+    产出顺序与拆分前完全一致：先尝试拿到 result，拿不到再产出 message。
+    """
+    conversation_id = state.conversation_id
+    message = state.message
+    file_ids = state.file_ids
+    sediment_ids = state.sediment_ids
+    is_text_reply = state.is_text_reply
+    # 检测模型是否返回了文本描述（含 referenced_image_ids）而非实际生成图片
+    # 这说明模型已发起图片生成工具调用，但 SSE 在工具完成前断开。
+    # 此时应再尝试轮询图片结果，而不是直接把文本当作最终输出。
+    # 当 is_text_reply 但 conversation_id 丢失时，尝试从最近对话列表恢复
+    if is_text_reply and not conversation_id:
+        conversation_id = _recover_conversation_id(
+            backend, request.prompt,
+            recovered_event="image_text_reply_conversation_id_recovered",
+            failed_event="image_text_reply_conversation_id_recovery_failed",
+            message_preview=message[:200],
+        ) or conversation_id
+    if is_text_reply and conversation_id:
+        logger.info({
+            "event": "image_model_text_reply_retry_poll",
+            "conversation_id": conversation_id,
+            "message_preview": message[:200],
+        })
+        # 文本回复场景下，图片可能需要 4-5 分钟才能异步生成完成。
+        # 使用 300s 超时并允许多次重试，避免因临时网络问题提前退出。
+        _poll_image_results_with_retry(
+            backend, conversation_id, file_ids, sediment_ids,
+            retry_poll_timeout=max(config.image_poll_timeout_secs, 300),
+            max_retries=3,
+            log_prefix="image_model_text_reply",
+        )
+
+        if file_ids or sediment_ids:
+            image_urls = backend.resolve_conversation_image_urls(
+                conversation_id, file_ids, sediment_ids, poll=False,
             )
+            if image_urls:
+                output = _build_image_result(backend, request, image_urls, conversation_id, index, total)
+                if output:
+                    yield output
+                    return
+    elif is_text_reply:
+        logger.warning({
+            "event": "image_model_text_reply_no_image",
+            "conversation_id": conversation_id,
+            "message_preview": message[:200],
+        })
+    yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=message, conversation_id=conversation_id)
 
-            if file_ids or sediment_ids:
-                image_urls = backend.resolve_conversation_image_urls(
-                    conversation_id, file_ids, sediment_ids, poll=False,
-                )
-                if image_urls:
-                    output = _build_image_result(backend, request, image_urls, conversation_id, index, total)
-                    if output:
-                        yield output
-                        return
-        elif is_text_reply:
-            logger.warning({
-                "event": "image_model_text_reply_no_image",
-                "conversation_id": conversation_id,
-                "message_preview": message[:200],
-            })
-        yield ImageOutput(kind="message", model=request.model, index=index, total=total, text=message, conversation_id=conversation_id)
-        return
 
-    # 兜底：当 message 为空且图片 URL 解析失败时，先尝试一次短延迟重试轮询
-    # 然后抛出明确错误而非让调用方得到 "upstream completed without generating images" 这种模糊报错
+def _fallback_outputs(
+    backend: OpenAIBackendAPI,
+    request: ConversationRequest,
+    state: _StreamState,
+    index: int,
+    total: int,
+) -> Iterator[ImageOutput]:
+    """结果组装段（message 为空时）：短延迟重试轮询后产出 result 或明确的 message。
+
+    兜底路径保证调用方不会得到 "upstream completed without generating images" 这类模糊报错。
+    """
+    conversation_id = state.conversation_id
+    file_ids = state.file_ids
+    sediment_ids = state.sediment_ids
     logger.warning({
         "event": "image_stream_no_result_fallback",
         "conversation_id": conversation_id,
         "file_ids": file_ids,
         "sediment_ids": sediment_ids,
-        "should_poll_for_image": should_poll_for_image,
+        "should_poll_for_image": state.should_poll_for_image,
     })
     # 当 should_poll_for_image 为 True 但 conversation_id 丢失时，尝试恢复
-    if should_poll_for_image and not conversation_id:
+    if state.should_poll_for_image and not conversation_id:
         conversation_id = _recover_conversation_id(
             backend, request.prompt,
             recovered_event="image_fallback_conversation_id_recovered",
             failed_event="image_fallback_conversation_id_recovery_failed",
         ) or conversation_id
-    if should_poll_for_image and conversation_id:
+    if state.should_poll_for_image and conversation_id:
         # 图片可能仍在异步处理中（上游 SSE 流在图片生成完成前就结束了）。
         # 使用 300s 超时并允许多次重试，避免因临时网络问题或图片尚未提交而提前退出。
         _poll_image_results_with_retry(
@@ -645,6 +683,62 @@ def stream_image_outputs(
                           text="Image generation started upstream but the response was incomplete. "
                                "Please try again.",
                           conversation_id=conversation_id)
+
+
+def stream_image_outputs(
+        backend: OpenAIBackendAPI,
+        request: ConversationRequest,
+        index: int = 1,
+        total: int = 1,
+) -> Iterator[ImageOutput]:
+    """消费生图对话 SSE 流，产出 progress / message / result 事件。
+
+    按四段组织（行为与事件产出顺序与拆分前完全一致），每段实现下沉到模块内
+    私有函数，本函数只保留编排骨架：
+    1. 准备对话：消费 conversation_events，逐条映射并透传进度事件；
+    2. 轮询前置判定：blocked / 纯文本回复判定、conversation_id 恢复、tasks 预检；
+    3. 轮询：首次解析图片 URL，文本回复与兜底场景按退避重试轮询；
+    4. 结果组装：下载字节并组装 result 事件，失败时产出明确的 message 事件。
+    """
+    # —— 段 1：准备对话 ——
+    last: dict[str, Any] = {}
+    for event in conversation_events(
+            backend,
+            prompt=request.prompt,
+            model=request.model,
+            images=request.images or [],
+            size=request.size,
+            quality=request.quality,
+            size_enabled=request.size_enabled,
+    ):
+        last = event
+        progress = _progress_output_for_event(event, request, index, total)
+        if progress is not None:
+            yield progress
+
+    # —— 段 2：轮询前置判定 ——
+    state, short_circuit = _resolve_stream_state(backend, request, last, index, total)
+    if short_circuit is not None:
+        yield short_circuit
+        return
+    assert state is not None
+
+    # —— 段 3：轮询 ——
+    image_urls = _first_poll_image_urls(backend, state)
+
+    # —— 段 4：结果组装 ——
+    if image_urls:
+        output = _build_image_result(backend, request, image_urls, state.conversation_id, index, total)
+        if output:
+            yield output
+        return
+
+    if state.message:
+        yield from _message_branch_outputs(backend, request, state, index, total)
+        return
+
+    yield from _fallback_outputs(backend, request, state, index, total)
+
 
 
 def _codex_response_images(value: Any) -> list[str]:
