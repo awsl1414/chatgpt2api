@@ -21,6 +21,16 @@ CONFIG_FILE = BASE_DIR / "config.json"
 VERSION_FILE = BASE_DIR / "VERSION"
 BACKUP_STATE_FILE = DATA_DIR / "backup_state.json"
 
+# config.json 标量字段的内置默认值（读取兜底与 _load_settings 共用）
+DEFAULT_REFRESH_ACCOUNT_INTERVAL_MINUTE = 5
+DEFAULT_IMAGE_RETENTION_DAYS = 30
+DEFAULT_IMAGE_POLL_TIMEOUT_SECS = 120
+DEFAULT_IMAGE_POLL_INTERVAL_SECS = 10.0
+DEFAULT_IMAGE_POLL_INITIAL_WAIT_SECS = 10.0
+DEFAULT_IMAGE_ACCOUNT_CONCURRENCY = 3
+DEFAULT_IMAGE_SETTLE_SECS = 2.0
+DEFAULT_IMAGE_MIN_FREE_MB = 500
+
 DEFAULT_BACKUP_INCLUDE = {
     "config": True,
     "cpa": True,
@@ -339,9 +349,9 @@ def _load_settings() -> LoadedSettings:
         )
 
     try:
-        refresh_interval = int(raw_config.get("refresh_account_interval_minute", 5))
+        refresh_interval = max(1, int(raw_config.get("refresh_account_interval_minute", DEFAULT_REFRESH_ACCOUNT_INTERVAL_MINUTE)))
     except (TypeError, ValueError):
-        refresh_interval = 5
+        refresh_interval = DEFAULT_REFRESH_ACCOUNT_INTERVAL_MINUTE
 
     return LoadedSettings(
         auth_key=auth_key,
@@ -381,31 +391,40 @@ class ConfigStore:
 
     @property
     def refresh_account_interval_minute(self) -> int:
+        """账号池后台刷新轮询间隔（分钟），下限 1 防止 0/负值导致忙轮询。"""
         try:
-            return int(self.data.get("refresh_account_interval_minute", 5))
+            return max(1, int(self.data.get("refresh_account_interval_minute", DEFAULT_REFRESH_ACCOUNT_INTERVAL_MINUTE)))
         except (TypeError, ValueError):
-            return 5
+            return DEFAULT_REFRESH_ACCOUNT_INTERVAL_MINUTE
 
     @property
     def image_retention_days(self) -> int:
         try:
-            return max(1, int(self.data.get("image_retention_days", 30)))
+            return max(1, int(self.data.get("image_retention_days", DEFAULT_IMAGE_RETENTION_DAYS)))
         except (TypeError, ValueError):
-            return 30
+            return DEFAULT_IMAGE_RETENTION_DAYS
+
+    @property
+    def image_min_free_mb(self) -> int:
+        """图片自动清理的磁盘最低空闲空间阈值（MB），低于该值时按最旧优先清理图片。"""
+        try:
+            return max(1, int(self.data.get("image_min_free_mb", DEFAULT_IMAGE_MIN_FREE_MB)))
+        except (TypeError, ValueError):
+            return DEFAULT_IMAGE_MIN_FREE_MB
 
     @property
     def image_poll_timeout_secs(self) -> int:
         try:
-            return max(1, int(self.data.get("image_poll_timeout_secs", 120)))
+            return max(1, int(self.data.get("image_poll_timeout_secs", DEFAULT_IMAGE_POLL_TIMEOUT_SECS)))
         except (TypeError, ValueError):
-            return 120
+            return DEFAULT_IMAGE_POLL_TIMEOUT_SECS
 
     @property
     def image_poll_interval_secs(self) -> float:
         try:
-            return max(0.5, float(self.data.get("image_poll_interval_secs", 10.0)))
+            return max(0.5, float(self.data.get("image_poll_interval_secs", DEFAULT_IMAGE_POLL_INTERVAL_SECS)))
         except (TypeError, ValueError):
-            return 10.0
+            return DEFAULT_IMAGE_POLL_INTERVAL_SECS
 
     @property
     def image_poll_initial_wait_secs(self) -> float:
@@ -413,16 +432,16 @@ class ConfigStore:
         and trips a transient 429. Default 10s gives the conversation document time
         to commit before the first poll."""
         try:
-            return max(0.0, float(self.data.get("image_poll_initial_wait_secs", 10.0)))
+            return max(0.0, float(self.data.get("image_poll_initial_wait_secs", DEFAULT_IMAGE_POLL_INITIAL_WAIT_SECS)))
         except (TypeError, ValueError):
-            return 10.0
+            return DEFAULT_IMAGE_POLL_INITIAL_WAIT_SECS
 
     @property
     def image_account_concurrency(self) -> int:
         try:
-            return max(1, int(self.data.get("image_account_concurrency", 3)))
+            return max(1, int(self.data.get("image_account_concurrency", DEFAULT_IMAGE_ACCOUNT_CONCURRENCY)))
         except (TypeError, ValueError):
-            return 3
+            return DEFAULT_IMAGE_ACCOUNT_CONCURRENCY
 
     @property
     def image_parallel_generation(self) -> bool:
@@ -464,9 +483,9 @@ class ConfigStore:
     def image_settle_secs(self) -> float:
         """二次确认等待时间（秒）。"""
         try:
-            return max(0.5, float(self.data.get("image_settle_secs", 2.0)))
+            return max(0.5, float(self.data.get("image_settle_secs", DEFAULT_IMAGE_SETTLE_SECS)))
         except (TypeError, ValueError):
-            return 2.0
+            return DEFAULT_IMAGE_SETTLE_SECS
 
     @property
     def auto_remove_invalid_accounts(self) -> bool:
@@ -582,6 +601,7 @@ class ConfigStore:
         data["image_poll_interval_secs"] = self.image_poll_interval_secs
         data["image_poll_initial_wait_secs"] = self.image_poll_initial_wait_secs
         data["image_account_concurrency"] = self.image_account_concurrency
+        data["image_min_free_mb"] = self.image_min_free_mb
         data["image_parallel_generation"] = self.image_parallel_generation
         data["image_remove_conversation_after_result"] = self.image_remove_conversation_after_result
         data["image_remove_conversation_always"] = self.image_remove_conversation_always

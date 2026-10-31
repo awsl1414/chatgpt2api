@@ -320,9 +320,7 @@ def download_images_zip(paths: list[str]) -> io.BytesIO:
 def _auto_cleanup_worker(stop_event: threading.Event) -> None:
     """后台线程：每30分钟检查存储，空间低于阈值自动清理最旧图片"""
     import shutil
-    min_free_mb = getattr(config, "image_min_free_mb", None)
-    if min_free_mb is None:
-        min_free_mb = 500
+    min_free_mb = config.image_min_free_mb
 
     while not stop_event.wait(1800):  # 每30分钟
         try:
