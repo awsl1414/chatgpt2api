@@ -9,7 +9,7 @@ import json
 import threading
 import time
 from collections.abc import Callable
-from datetime import datetime
+from utils.clock import parse_timestamp, utc_iso_from_epoch, utc_now_iso
 from pathlib import Path
 from typing import Any
 
@@ -28,22 +28,16 @@ TERMINAL_STATUSES = {TASK_STATUS_SUCCESS, TASK_STATUS_ERROR}
 UNFINISHED_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
 
 
-def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _timestamp(value: object) -> float:
-    if not isinstance(value, str) or not value.strip():
-        return 0.0
-    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S.%f", "%Y-%m-%dT%H:%M:%S"):
-        try:
-            return datetime.strptime(value[:26], fmt).timestamp()
-        except ValueError:
-            continue
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
-    except Exception:
-        return 0.0
+    """把时间戳宽松解析为 Unix 秒（读取端统一入口），无法解析返回 0.0。
+
+    存量 naive 字符串按本地时间解释（写入端历史口径）；新口径 UTC
+    ISO8601（Z/+00:00 后缀）按其自带时区解释。统一经 utils.clock.parse_timestamp。
+    """
+    parsed = parse_timestamp(value)
+    return parsed.timestamp() if parsed else 0.0
 
 
 def _clean(value: object, default: str = "") -> str:
@@ -211,7 +205,7 @@ class ImageTaskService:
             raise ValueError("client_task_id is required")
         owner = _owner_id(identity)
         key = _task_key(owner, task_id)
-        now = _now_iso()
+        now = utc_now_iso()
         should_start = False
         with self._lock:
             cleaned = self._cleanup_locked()
@@ -335,8 +329,8 @@ class ImageTaskService:
             "role": identity.get("role"),
             "endpoint": endpoint,
             "model": model,
-            "started_at": datetime.fromtimestamp(started).strftime("%Y-%m-%d %H:%M:%S"),
-            "ended_at": _now_iso(),
+            "started_at": utc_iso_from_epoch(started),
+            "ended_at": utc_now_iso(),
             "duration_ms": int((time.time() - started) * 1000),
             "status": status,
         }
@@ -359,7 +353,7 @@ class ImageTaskService:
             if task is None:
                 return
             task.update(updates)
-            task["updated_at"] = _now_iso()
+            task["updated_at"] = utc_now_iso()
             task["updated_ts"] = time.time()
             self._save_locked()
 
@@ -392,8 +386,8 @@ class ImageTaskService:
                 "model": _clean(item.get("model"), "gpt-image-2"),
                 "size": _clean(item.get("size")),
                 "quality": _clean(item.get("quality"), "auto"),
-                "created_at": _clean(item.get("created_at"), _now_iso()),
-                "updated_at": _clean(item.get("updated_at"), _clean(item.get("created_at"), _now_iso())),
+                "created_at": _clean(item.get("created_at"), utc_now_iso()),
+                "updated_at": _clean(item.get("updated_at"), _clean(item.get("created_at"), utc_now_iso())),
                 "created_ts": item.get("created_ts"),
                 "updated_ts": item.get("updated_ts"),
                 "started_ts": item.get("started_ts"),
@@ -423,7 +417,7 @@ class ImageTaskService:
             if task.get("status") in UNFINISHED_STATUSES:
                 task["status"] = TASK_STATUS_ERROR
                 task["error"] = "服务已重启，未完成的图片任务已中断"
-                task["updated_at"] = _now_iso()
+                task["updated_at"] = utc_now_iso()
                 changed = True
         return changed
 

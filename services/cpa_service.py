@@ -6,7 +6,7 @@ import json
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from datetime import datetime, timezone
+from utils.clock import utc_now_iso
 from pathlib import Path
 from threading import Lock
 
@@ -26,8 +26,6 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _normalize_import_job(raw: object, *, fail_unfinished: bool) -> dict | None:
@@ -39,8 +37,8 @@ def _normalize_import_job(raw: object, *, fail_unfinished: bool) -> dict | None:
     return {
         "job_id": str(raw.get("job_id") or uuid.uuid4().hex).strip(),
         "status": status,
-        "created_at": str(raw.get("created_at") or _now_iso()).strip() or _now_iso(),
-        "updated_at": str(raw.get("updated_at") or raw.get("created_at") or _now_iso()).strip() or _now_iso(),
+        "created_at": str(raw.get("created_at") or utc_now_iso()).strip() or utc_now_iso(),
+        "updated_at": str(raw.get("updated_at") or raw.get("created_at") or utc_now_iso()).strip() or utc_now_iso(),
         "total": int(raw.get("total") or 0),
         "completed": int(raw.get("completed") or 0),
         "added": int(raw.get("added") or 0),
@@ -224,8 +222,8 @@ class CPAImportService:
         job = {
             "job_id": uuid.uuid4().hex,
             "status": "pending",
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
+            "created_at": utc_now_iso(),
+            "updated_at": utc_now_iso(),
             "total": len(names),
             "completed": 0,
             "added": 0,
@@ -251,7 +249,7 @@ class CPAImportService:
         current = self._config.get_import_job(pool_id)
         if current is None:
             return None
-        next_job = {**current, **updates, "updated_at": _now_iso()}
+        next_job = {**current, **updates, "updated_at": utc_now_iso()}
         pool = self._config.set_import_job(pool_id, next_job)
         if pool is None:
             return None

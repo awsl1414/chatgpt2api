@@ -9,6 +9,7 @@ import hmac
 import secrets
 import uuid
 from datetime import datetime, timezone
+from utils.clock import utc_now_iso
 from threading import Lock
 from typing import Literal
 
@@ -18,8 +19,6 @@ from services.storage.base import StorageBackend
 AuthRole = Literal["admin", "user"]
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _hash_key(value: str) -> str:
@@ -52,7 +51,7 @@ class AuthService:
             return None
         item_id = self._clean(raw.get("id")) or uuid.uuid4().hex[:12]
         name = self._clean(raw.get("name")) or self._default_name(role)
-        created_at = self._clean(raw.get("created_at")) or _now_iso()
+        created_at = self._clean(raw.get("created_at")) or utc_now_iso()
         last_used_at = self._clean(raw.get("last_used_at")) or None
         return {
             "id": item_id,
@@ -168,7 +167,7 @@ class AuthService:
                 "role": role,
                 "key_hash": key_hash,
                 "enabled": True,
-                "created_at": _now_iso(),
+                "created_at": utc_now_iso(),
                 "last_used_at": None,
             }
             self._items.append(item)
@@ -240,7 +239,7 @@ class AuthService:
                     continue
                 next_item = dict(item)
                 now = datetime.now(timezone.utc)
-                next_item["last_used_at"] = now.isoformat()
+                next_item["last_used_at"] = utc_now_iso()
                 self._items[index] = next_item
                 item_id = self._clean(next_item.get("id"))
                 last_flush_at = self._last_used_flush_at.get(item_id)

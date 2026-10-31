@@ -9,7 +9,8 @@ import io
 import json
 import time
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
+from utils.clock import utc_iso_from_epoch, utc_now_iso
 from pathlib import Path
 from threading import Lock
 from urllib.parse import quote, urlparse
@@ -38,8 +39,6 @@ def _clean(value: object) -> str:
     return str(value or "").strip()
 
 
-def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _safe_relative_path(path: str) -> str:
@@ -232,7 +231,7 @@ class ImageStorageService:
             "name": Path(rel).name,
             "date": "-".join(rel.split("/")[:3]),
             "size": len(image_data),
-            "created_at": _now_iso(),
+            "created_at": utc_now_iso(),
             "storage": "both" if stored_local and stored_webdav else ("webdav" if stored_webdav else "local"),
             "local": stored_local,
             "webdav": stored_webdav,
@@ -291,9 +290,9 @@ class ImageStorageService:
                     "rel": rel,
                     "path": rel,
                     "name": path.name,
-                    "date": "-".join(rel.split("/")[:3]) if len(rel.split("/")) >= 4 else datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d"),
+                    "date": "-".join(rel.split("/")[:3]) if len(rel.split("/")) >= 4 else datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d"),
                     "size": path.stat().st_size,
-                    "created_at": datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
+                    "created_at": utc_iso_from_epoch(path.stat().st_mtime),
                     "storage": "local",
                     "local": True,
                     "webdav": False,
@@ -386,9 +385,9 @@ class ImageStorageService:
                         "rel": rel,
                         "path": rel,
                         "name": path.name,
-                        "date": "-".join(rel.split("/")[:3]) if len(rel.split("/")) >= 4 else datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d"),
+                        "date": "-".join(rel.split("/")[:3]) if len(rel.split("/")) >= 4 else datetime.fromtimestamp(path.stat().st_mtime, timezone.utc).strftime("%Y-%m-%d"),
                         "size": len(payload),
-                        "created_at": str(item.get("created_at") or datetime.fromtimestamp(path.stat().st_mtime).strftime("%Y-%m-%d %H:%M:%S")),
+                        "created_at": str(item.get("created_at") or utc_iso_from_epoch(path.stat().st_mtime)),
                         "storage": "both",
                         "local": True,
                         "webdav": True,

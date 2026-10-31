@@ -7,7 +7,8 @@ from __future__ import annotations
 import json
 import threading
 import time
-from datetime import datetime
+from utils.clock import utc_iso_from_epoch, utc_now_iso
+from utils.clock import utc_now_iso
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
@@ -29,8 +30,6 @@ EDITABLE_FILE_ROOT = DATA_DIR / "files"
 EDITABLE_FILE_TASKS_PATH = DATA_DIR / "editable_file_tasks.json"
 
 
-def _now_iso() -> str:
-    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 def _clean(value: object, default: str = "") -> str:
@@ -119,7 +118,7 @@ class EditableFileTaskService:
         task_id = _clean(client_task_id) or new_uuid()
         owner = _owner_id(identity)
         key = _task_key(owner, task_id)
-        now = _now_iso()
+        now = utc_now_iso()
         with self._lock:
             if key in self._tasks:
                 return _public_task(self._tasks[key])
@@ -171,7 +170,7 @@ class EditableFileTaskService:
             if task is None:
                 return
             task.update(updates)
-            task["updated_at"] = _now_iso()
+            task["updated_at"] = utc_now_iso()
             task["updated_ts"] = time.time()
             self._save_locked()
 
@@ -195,8 +194,8 @@ class EditableFileTaskService:
                 "owner_id": owner,
                 "status": _clean(item.get("status"), TASK_STATUS_ERROR),
                 "kind": "psd" if item.get("kind") == "psd" else "ppt",
-                "created_at": _clean(item.get("created_at"), _now_iso()),
-                "updated_at": _clean(item.get("updated_at"), _clean(item.get("created_at"), _now_iso())),
+                "created_at": _clean(item.get("created_at"), utc_now_iso()),
+                "updated_at": _clean(item.get("updated_at"), _clean(item.get("created_at"), utc_now_iso())),
                 "created_ts": float(item.get("created_ts") or 0),
                 "updated_ts": float(item.get("updated_ts") or 0),
             }
@@ -219,7 +218,7 @@ class EditableFileTaskService:
                 task["status"] = TASK_STATUS_ERROR
                 task["error"] = "服务已重启，未完成的任务已中断"
                 task["ended_ts"] = time.time()
-                task["updated_at"] = _now_iso()
+                task["updated_at"] = utc_now_iso()
                 task["updated_ts"] = time.time()
                 changed = True
         return changed
@@ -242,8 +241,8 @@ class EditableFileTaskService:
             "role": identity.get("role"),
             "endpoint": f"/v1/{kind}/generations",
             "model": EDITABLE_FILE_MODEL,
-            "started_at": datetime.fromtimestamp(started).strftime("%Y-%m-%d %H:%M:%S"),
-            "ended_at": _now_iso(),
+            "started_at": utc_iso_from_epoch(started),
+            "ended_at": utc_now_iso(),
             "duration_ms": int((time.time() - started) * 1000),
             "status": status,
         }

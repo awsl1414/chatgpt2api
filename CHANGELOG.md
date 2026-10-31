@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [重构] 时间口径统一为 UTC ISO8601 单一口径（R3-L7）：调用日志、图片/文件任务、CPA/sub2api 导入任务、图片存储、鉴权 key 的时间戳生成端统一输出 UTC 秒级 ISO8601（`Z` 后缀），并收敛原先 7 处重复的 `_now_iso` 到 `utils/clock.py`；账号 `last_used_at` 顺带修复「本地时间写入、按 UTC 读取」的口径错位。读取端宽松解析兼容存量「本地时间」与「UTC」两种既有形态，存量数据不做回写迁移；账号域（`now_str`）既有 UTC 时间戳格式不变。
 + [新增] 新增部署开关 `allow_remote_image_fetch`（默认开启，行为不变）：控制服务端是否拉取用户请求中的远程 `image_url`（http/https）；面向公网部署时建议设为 `false` 以收敛 SSRF 暴露面，关闭后仅接受 base64/data 形式的图片输入。
 + [重构] 账号池生图额度耗尽改抛领域异常 `QuotaExhaustedError`（`services/errors.py`），替换 `services/account/pool.py` 的 `RuntimeError` 并消除 `log_service` 的消息子串匹配；对外 429 `insufficient_quota` 错误响应格式不变。
 + [破坏性变更] 移除旧版全局代理：`config.json` 的 `proxy` 键不再生效，设置页全局代理输入框已删除，代理请改用「稳定代理运行时」（`proxy_runtime`）或账号级代理。优先级为 账号代理 > 稳定代理运行时（仅上游请求）> 显式代理 > 直连。
