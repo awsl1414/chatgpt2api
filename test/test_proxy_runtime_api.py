@@ -8,6 +8,11 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 import api.system as system_module
+# 审计 B-中7 拆分后，代理/健康端点分别由 api.system.proxy 与 api.system.health
+# 子路由承载；模块级依赖（config / require_admin / test_proxy / proxy_settings）
+# 需 patch 在对应子模块上
+from api.system import health as health_module
+from api.system import proxy as proxy_module
 from services.config import DEFAULT_PROXY_RUNTIME
 
 
@@ -106,11 +111,14 @@ class ProxyRuntimeApiTests(unittest.TestCase):
             }
 
         self.patchers = [
-            mock.patch.object(system_module, "config", self.fake_config),
-            mock.patch.object(system_module, "require_admin", lambda _authorization: {"role": "admin"}),
-            mock.patch.object(system_module, "test_proxy", fake_test_proxy),
-            mock.patch.object(system_module, "test_clearance", fake_test_clearance, create=True),
-            mock.patch.object(system_module, "proxy_settings", self.fake_proxy_settings, create=True),
+            mock.patch.object(proxy_module, "config", self.fake_config),
+            mock.patch.object(proxy_module, "require_admin", lambda _authorization: {"role": "admin"}),
+            mock.patch.object(proxy_module, "test_proxy", fake_test_proxy),
+            mock.patch.object(proxy_module, "test_clearance", fake_test_clearance, create=True),
+            mock.patch.object(proxy_module, "proxy_settings", self.fake_proxy_settings, create=True),
+            # /health 由 api.system.health 承载，需单独 patch 其模块级依赖
+            mock.patch.object(health_module, "config", self.fake_config),
+            mock.patch.object(health_module, "proxy_settings", self.fake_proxy_settings, create=True),
             mock.patch("services.account_service.account_service", FakeAccountService()),
         ]
         for patcher in self.patchers:

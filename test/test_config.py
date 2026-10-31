@@ -152,10 +152,13 @@ def test_update_whitelist_is_top_level_dimension(tmp_path: Path) -> None:
 def test_save_settings_unknown_key_returns_400(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """管理端 POST /api/settings 对未知配置键返回 400，错误信息为简体中文。"""
     import api.system as system_module
+    # 审计 B-中7 拆分后，/api/settings 由 api.system.settings 子路由承载，
+    # config 与 require_admin 需 patch 在该子模块上
+    from api.system import settings as settings_module
 
     store = _make_store(tmp_path)
-    monkeypatch.setattr(system_module, "config", store)
-    monkeypatch.setattr(system_module, "require_admin", lambda _authorization: {"role": "admin"})
+    monkeypatch.setattr(settings_module, "config", store)
+    monkeypatch.setattr(settings_module, "require_admin", lambda _authorization: {"role": "admin"})
     app = FastAPI()
     app.include_router(system_module.create_router("whitelist-test"))
     client = TestClient(app)
