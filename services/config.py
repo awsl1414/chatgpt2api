@@ -1,6 +1,9 @@
 """配置中心：config.json 的读写、字段归一化与派生设置（备份/图片存储/代理运行时等）。
 
-update() 入口统一做 normalize + 校验；legacy 全局代理链已按审计决策删除。
+update() 入口统一做顶层键白名单校验 + normalize + 校验：未知顶层键直接拒绝
+（管理端映射为 400）；auth-key 与 backup_state 不在白名单内——前者是部署侧
+配置（env `CHATGPT2API_AUTH_KEY` 优先），不经管理端设置接口改写，后者是
+独立状态文件（data/backup_state.json），不属于 config.json 内容。
 """
 from __future__ import annotations
 
@@ -96,6 +99,43 @@ DEFAULT_THIRD_PARTY_APPS = {
         "url": "https://canvas.best",
     },
 }
+
+# config.update() 允许写入的顶层键白名单（白名单只作用于顶层键维度，
+# 嵌套字段由各 _normalize_* 收口）。与 config.get() 输出、config.example.json
+# 的键集合保持一致；不含 auth-key（部署侧配置，不经管理端设置接口改写）
+# 与 backup_state（独立状态文件，非 config.json 内容）。
+ALLOWED_CONFIG_KEYS: frozenset[str] = frozenset({
+    "refresh_account_interval_minute",
+    "image_retention_days",
+    "image_poll_timeout_secs",
+    "image_poll_interval_secs",
+    "image_poll_initial_wait_secs",
+    "image_account_concurrency",
+    "image_min_free_mb",
+    "image_parallel_generation",
+    "image_settle_enabled",
+    "image_check_before_hit_enabled",
+    "image_settle_secs",
+    "image_timeout_retry_secs",
+    "image_remove_conversation_after_result",
+    "image_remove_conversation_always",
+    "auto_remove_invalid_accounts",
+    "auto_remove_rate_limited_accounts",
+    "auto_relogin_after_refresh",
+    "allow_remote_image_fetch",
+    "log_levels",
+    "sensitive_words",
+    "ai_review",
+    "global_system_prompt",
+    "default_upstream_model_name",
+    "default_thinking_effort",
+    "base_url",
+    "backup",
+    "image_storage",
+    "chat_completion_cache",
+    "proxy_runtime",
+    "third_party_apps",
+})
 
 
 def _normalize_bool(value: object, default: bool = False) -> bool:
@@ -642,8 +682,17 @@ class ConfigStore:
         return _normalize_third_party_apps_settings(self.data.get("third_party_apps"))
 
     def update(self, data: dict[str, object]) -> dict[str, object]:
+        """合并写入配置：顶层键白名单校验 → 按域 normalize → 校验 → 落盘。
+
+        未知顶层键抛 ValueError（管理端 /api/settings 捕获后返回 400），
+        防止前端注入任意键污染 config.json。
+        """
+        incoming = dict(data or {})
+        unknown_keys = sorted(str(key) for key in set(incoming) - ALLOWED_CONFIG_KEYS)
+        if unknown_keys:
+            raise ValueError("未知配置键: " + ", ".join(unknown_keys))
         next_data = dict(self.data)
-        next_data.update(dict(data or {}))
+        next_data.update(incoming)
         if "backup" in next_data:
             next_data["backup"] = _normalize_backup_settings(next_data.get("backup"))
         if "image_storage" in next_data:
@@ -664,7 +713,6 @@ class ConfigStore:
                     incoming_runtime["_existing_cf_cookies"] = previous_clearance.get("cf_cookies")
                     incoming_runtime["_existing_cf_clearance"] = previous_clearance.get("cf_clearance")
             next_data["proxy_runtime"] = _normalize_proxy_runtime_settings(incoming_runtime)
-        next_data.pop("backup_state", None)
         self.data = next_data
         self._save()
         return self.get()
