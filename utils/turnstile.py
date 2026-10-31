@@ -1,3 +1,10 @@
+"""Cloudflare Turnstile 求解（static：逆向 chatgpt.com 前端 turnstile 校验脚本所得）。
+
+`solve_turnstile_token` 复刻前端 VM 对 dx/p 参数的变换流程（OrderedMap +
+XOR 混淆），产出校验 token；算法来源为站点静态 bundle 逆向，上游改动
+（混淆流程变化）时需重新比对。
+"""
+
 import base64
 import json
 import random

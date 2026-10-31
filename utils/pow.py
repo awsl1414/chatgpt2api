@@ -1,3 +1,9 @@
+"""Proof-of-Work 资源解析与配置构造（capture：/backend-api/sentinel/chat-requirements 链路）。
+
+`parse_pow_resources` 从 requirements 页面 HTML 中解析出 pow 脚本地址与
+种子；`build_pow_config` 按 sentinel 要求构造 proof 字段。
+"""
+
 import hashlib
 import json
 import random

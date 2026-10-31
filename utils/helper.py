@@ -1,3 +1,9 @@
+"""通用工具集：模型名解析、上游 HTTP/SSE 原语与共享常量。
+
+包含 /v1 模型名拆分（split_image_model）、codex 模型映射、
+UpstreamHTTPError 与 SSE 流解析等纯工具；禁止依赖 services 层。
+"""
+
 import base64
 import hashlib
 import json

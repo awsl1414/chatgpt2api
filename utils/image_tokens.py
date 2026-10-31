@@ -1,3 +1,9 @@
+"""图片 token 计数与 data URL 解码（供 messages 预算与图片输入链路使用）。
+
+`count_image_content_tokens` 按图片尺寸估算 token 占用；
+`decode_data_url_bytes` / `image_size_from_data_url` 处理内联图片。
+"""
+
 from __future__ import annotations
 
 import base64

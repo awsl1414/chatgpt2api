@@ -1,3 +1,9 @@
+"""结构化日志器（api/services/utils 共用的唯一日志出口）。
+
+自动脱敏 token / base64 图片数据；日志级别由组装层（services/config）
+经 set_levels_provider 注入，本模块对 services 保持零依赖（审查 R2-H1）。
+"""
+
 import base64
 import binascii
 import json
