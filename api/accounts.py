@@ -25,6 +25,7 @@ from api.support import (
     sanitize_sub2api_servers,
 )
 from services.account_service import account_service
+from services.errors import CpaError
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
 from services.oauth_login_service import OAuthLoginError, oauth_login_service
 from services.sub2api_service import (
@@ -427,7 +428,10 @@ def create_router() -> APIRouter:
         pool = cpa_config.get_pool(pool_id)
         if pool is None:
             raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        return {"pool_id": pool_id, "files": await run_in_threadpool(list_remote_files, pool)}
+        try:
+            return {"pool_id": pool_id, "files": await run_in_threadpool(list_remote_files, pool)}
+        except CpaError as exc:
+            raise HTTPException(status_code=502, detail={"error": str(exc)}) from exc
 
     @router.post("/api/cpa/pools/{pool_id}/import")
     async def cpa_pool_import(pool_id: str, body: CPAImportRequest, authorization: str | None = Header(default=None)):
@@ -435,10 +439,8 @@ def create_router() -> APIRouter:
         pool = cpa_config.get_pool(pool_id)
         if pool is None:
             raise HTTPException(status_code=404, detail={"error": "pool not found"})
-        try:
-            job = cpa_import_service.start_import(pool, body.names)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        # 参数/资源校验错误由 start_import 抛 InvalidRequestError，经全局 handler 映射 400
+        job = cpa_import_service.start_import(pool, body.names)
         return {"import_job": job}
 
     @router.get("/api/cpa/pools/{pool_id}/import")
@@ -518,10 +520,8 @@ def create_router() -> APIRouter:
         server = sub2api_config.get_server(server_id)
         if server is None:
             raise HTTPException(status_code=404, detail={"error": "server not found"})
-        try:
-            job = sub2api_import_service.start_import(server, body.account_ids)
-        except ValueError as exc:
-            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        # 参数/资源校验错误由 start_import 抛 InvalidRequestError，经全局 handler 映射 400
+        job = sub2api_import_service.start_import(server, body.account_ids)
         return {"import_job": job}
 
     @router.get("/api/sub2api/servers/{server_id}/import")

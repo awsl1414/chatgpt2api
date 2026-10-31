@@ -14,6 +14,7 @@ from curl_cffi.requests import Session
 
 from services.account_service import account_service
 from services.config import DATA_DIR
+from services.errors import CpaError, InvalidRequestError
 from services.proxy_service import proxy_settings
 
 
@@ -160,14 +161,14 @@ def list_remote_files(pool: dict) -> list[dict]:
     try:
         response = session.get(url, headers=_management_headers(secret_key), timeout=30)
         if not response.ok:
-            raise RuntimeError(f"remote list failed: HTTP {response.status_code}")
+            raise CpaError(f"remote list failed: HTTP {response.status_code}")
         payload = response.json()
     finally:
         session.close()
 
     files = payload.get("files") if isinstance(payload, dict) else None
     if not isinstance(files, list):
-        raise RuntimeError("remote list payload is invalid")
+        raise CpaError("remote list payload is invalid")
 
     items: list[dict] = []
     for item in files:
@@ -216,7 +217,7 @@ class CPAImportService:
     def start_import(self, pool: dict, selected_files: list[str]) -> dict:
         names = [str(name or "").strip() for name in selected_files if str(name or "").strip()]
         if not names:
-            raise ValueError("selected files is required")
+            raise InvalidRequestError("selected files is required")
 
         pool_id = str(pool.get("id") or "").strip()
         job = {
@@ -234,7 +235,7 @@ class CPAImportService:
         }
         saved_pool = self._config.set_import_job(pool_id, job)
         if saved_pool is None:
-            raise ValueError("pool not found")
+            raise InvalidRequestError("pool not found")
 
         thread = threading.Thread(
             target=self._run_import,

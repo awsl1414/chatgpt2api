@@ -97,6 +97,8 @@ class WebDAVClient:
         self.username = _clean(settings.get("webdav_username"))
         self.password = _clean(settings.get("webdav_password"))
         self.root_path = _clean(settings.get("webdav_root_path")).strip("/")
+        # WebDAV 属用户自有存储端点，不走 ChatGPT 代理链路（审查 R2-M2 结论），
+        # 故有意不经过 proxy_settings.build_session_kwargs，保持直连
         self.session = requests.Session()
 
     def _auth_kwargs(self) -> dict[str, object]:

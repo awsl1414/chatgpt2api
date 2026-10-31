@@ -245,6 +245,12 @@ class Sub2apiError(DomainError):
     status_code = 502
 
 
+class CpaError(DomainError):
+    """CPA 池远端拉取或导入失败。"""
+
+    status_code = 502
+
+
 class CodexSourceAccountError(DomainError):
     """codex /responses 通道要求 codex 来源账号而实际不是（保持 502 兼容既有对外响应）。"""
 
