@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
 import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import { useInitialLoad } from "@/hooks/use-initial-load";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
@@ -31,22 +31,17 @@ const settingsTabs = [
 ];
 
 function SettingsDataController() {
-  const didLoadRef = useRef(false);
   const loadConfig = useConfigStore((state) => state.loadConfig);
   const loadUpstreamModels = useConfigStore((state) => state.loadUpstreamModels);
 
-  useEffect(() => {
-    if (didLoadRef.current) {
-      return;
-    }
-    didLoadRef.current = true;
+  useInitialLoad(() => {
     void loadConfig().then((result) => {
       if (!result.ok) {
         toast.error(result.error ?? "加载系统配置失败");
       }
     });
     void loadUpstreamModels();
-  }, [loadConfig, loadUpstreamModels]);
+  });
 
   return null;
 }

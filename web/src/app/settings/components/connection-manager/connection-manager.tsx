@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Import, LoaderCircle, Pencil, Plus, Save, Search, ServerCog, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
+import { useInitialLoad } from "@/hooks/use-initial-load";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -21,6 +22,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { actionError } from "@/lib/action-result";
 
 import { ImportJobPanel } from "./import-job-panel";
+import { usePagination } from "@/hooks/use-pagination";
 import { PAGE_SIZE_OPTIONS, type ConnectionAdapter, type ConnectionRecord, type RemoteItemView } from "./types";
 
 type ConnectionManagerProps<TConn extends ConnectionRecord, TForm, TItem> = {
@@ -38,7 +40,6 @@ const POLL_INTERVAL_MS = 1500;
 export function ConnectionManager<TConn extends ConnectionRecord, TForm, TItem>({
   adapter,
 }: ConnectionManagerProps<TConn, TForm, TItem>) {
-  const didLoadRef = useRef(false);
   const pollTimerRef = useRef<number | null>(null);
 
   const [connections, setConnections] = useState<TConn[]>([]);
@@ -56,8 +57,6 @@ export function ConnectionManager<TConn extends ConnectionRecord, TForm, TItem>(
   const [remoteItems, setRemoteItems] = useState<TItem[]>([]);
   const [selectedKeys, setSelectedKeys] = useState<string[]>([]);
   const [itemQuery, setItemQuery] = useState("");
-  const [itemPage, setItemPage] = useState(1);
-  const [pageSize, setPageSize] = useState<(typeof PAGE_SIZE_OPTIONS)[number]>("100");
   const [isStartingImport, setIsStartingImport] = useState(false);
 
   const stopPolling = () => {
@@ -89,13 +88,9 @@ export function ConnectionManager<TConn extends ConnectionRecord, TForm, TItem>(
     }
   };
 
-  useEffect(() => {
-    if (didLoadRef.current) {
-      return;
-    }
-    didLoadRef.current = true;
+  useInitialLoad(() => {
     void refreshConnections();
-  }, []);
+  });
 
   // 有 pending/running 的导入任务时每 1.5s 轮询连接列表刷新进度
   useEffect(() => {
@@ -196,10 +191,8 @@ export function ConnectionManager<TConn extends ConnectionRecord, TForm, TItem>(
 
   const filteredViews = filteredPairs.map((pair) => pair.view);
 
-  const currentPageSize = Number(pageSize);
-  const pageCount = Math.max(1, Math.ceil(filteredViews.length / currentPageSize));
-  const safePage = Math.min(itemPage, pageCount);
-  const pagedViews = filteredViews.slice((safePage - 1) * currentPageSize, safePage * currentPageSize);
+  const { page: safePage, pageCount, pageSize, setPageSize, setPage: setItemPage, pageItems: pagedViews } =
+    usePagination(filteredViews, "100");
   const allFilteredSelected =
     filteredViews.length > 0 && filteredViews.every((view) => selectedKeys.includes(view.key));
 
@@ -405,10 +398,7 @@ export function ConnectionManager<TConn extends ConnectionRecord, TForm, TItem>(
             <div className="flex items-center gap-2">
               <Select
                 value={pageSize}
-                onValueChange={(value) => {
-                  setPageSize(value as (typeof PAGE_SIZE_OPTIONS)[number]);
-                  setItemPage(1);
-                }}
+                onValueChange={setPageSize}
               >
                 <SelectTrigger className="h-10 w-[120px] rounded-xl border-stone-200 bg-white">
                   <SelectValue />
@@ -481,8 +471,8 @@ export function ConnectionManager<TConn extends ConnectionRecord, TForm, TItem>(
 
           <div className="flex items-center justify-between text-sm text-stone-500">
             <span>
-              第 {filteredViews.length === 0 ? 0 : (safePage - 1) * currentPageSize + 1} -{" "}
-              {Math.min(safePage * currentPageSize, filteredViews.length)} 条，共 {filteredViews.length} 条
+              第 {filteredViews.length === 0 ? 0 : (safePage - 1) * Number(pageSize) + 1} -{" "}
+              {Math.min(safePage * Number(pageSize), filteredViews.length)} 条，共 {filteredViews.length} 条
             </span>
             <div className="flex items-center gap-2">
               <Button

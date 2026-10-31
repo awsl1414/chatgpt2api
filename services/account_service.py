@@ -50,10 +50,15 @@ def _build_refresh_initial(total: int) -> dict:
 
 
 def _apply_refresh_update(progress: dict, payload: tuple[str, int]) -> None:
-    """刷新单条进度：累加状态计数与总额度。payload 为 (status, quota)。"""
+    """刷新单条进度：累加状态计数与总额度。payload 为 (status, quota)。
+
+    额度只累计「正常」状态账号，与 AccountPool.get_stats 的 total_quota
+    口径一致（审查 R3-L8），避免刷新进行中的展示值高于完成后的最终值。
+    """
     status, quota = payload
     progress["status_counts"][status] = progress["status_counts"].get(status, 0) + 1
-    progress["total_quota"] += quota
+    if status == "正常":
+        progress["total_quota"] += quota
 
 
 def _build_relogin_initial(total: int) -> dict:

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import { AlertCircle, CheckCircle2, Clock3, FileArchive, FileText, History, ImagePlus, LoaderCircle, Pencil, Play, Plus, RefreshCw, Trash2, XCircle } from "lucide-react";
 
+import { readFileAsDataUrl } from "@/lib/image-reference";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -39,12 +40,8 @@ const formatElapsed = (seconds: number) => `${Math.floor(seconds / 60)}m ${Strin
 const titleOfPrompt = (prompt: string, fallback: string) => prompt.trim().replace(/\s+/g, " ").slice(0, 24) || fallback;
 const createClientTaskId = () => `${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
-const readFile = (file: File) => new Promise<string>((resolve, reject) => {
-  const reader = new FileReader();
-  reader.onload = () => resolve(String(reader.result || ""));
-  reader.onerror = () => reject(reader.error);
-  reader.readAsDataURL(file);
-});
+// 复用 lib/image-reference 的 FileReader Promise 包装（审查 R3-L5：删除手写重复实现）
+const readFile = (file: File) => readFileAsDataUrl(file);
 
 const mergeTasks = (current: EditableFileTask[], updates: EditableFileTask[]) => {
   const next = [...current];

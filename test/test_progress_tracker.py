@@ -113,3 +113,16 @@ def test_concurrent_updates_keep_processed_consistent():
     with ThreadPoolExecutor(max_workers=8) as executor:
         list(executor.map(lambda i: tracker.update("p1", i), range(200)))
     assert tracker.get("p1")["processed"] == 200
+
+
+def test_refresh_update_quota_only_counts_normal_accounts():
+    """刷新进度额度只累计「正常」状态，与 pool.get_stats 口径一致（审查 R3-L8）。"""
+    from services.account_service import _apply_refresh_update
+
+    progress = {"status_counts": {"正常": 0, "限流": 0, "异常": 0, "禁用": 0}, "total_quota": 0}
+    _apply_refresh_update(progress, ("正常", 500))
+    _apply_refresh_update(progress, ("限流", 300))
+    _apply_refresh_update(progress, ("异常", 200))
+    _apply_refresh_update(progress, ("正常", 100))
+    assert progress["total_quota"] == 600
+    assert progress["status_counts"] == {"正常": 2, "限流": 1, "异常": 1, "禁用": 0}

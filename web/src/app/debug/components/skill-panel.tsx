@@ -2,8 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { Copy, Download } from "lucide-react";
-import { toast } from "sonner";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { Button } from "@/components/ui/button";
 import webConfig from "@/constants/common-env";
 import { fetchSettingsConfig } from "@/lib/api/settings";
@@ -120,10 +120,7 @@ SKILL.md content:
 ${skillEn}
 \`\`\``, [skillEn]);
 
-  const copyText = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    toast.success("已复制");
-  };
+  const copyText = (text: string) => copyToClipboard(text, "已复制");
 
   const downloadSkill = (text: string) => {
     const url = URL.createObjectURL(new Blob([text], { type: "text/markdown;charset=utf-8" }));

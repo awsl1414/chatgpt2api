@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 // 统一的分页 hook：替换各页面手写的 page/pageSize/pageCount/safePage 切片逻辑
 // （审计 F-中3「手写分页 5 处」的收敛点）。pageSize 以字符串持有，直接适配 Select 的 value。

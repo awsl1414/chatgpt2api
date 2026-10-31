@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ImagePlus, LoaderCircle, Send, X } from "lucide-react";
 
+import { readFileAsDataUrl } from "@/lib/image-reference";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,22 +32,20 @@ function readImage(file: File): Promise<SelectedImage> {
       reject(new Error(`${file.name} 超过 10MB`));
       return;
     }
-    const reader = new FileReader();
-    reader.onload = () => {
-      const url = String(reader.result || "");
-      if (!url.startsWith("data:image/")) {
-        reject(new Error(`${file.name} 读取失败`));
-        return;
-      }
-      resolve({
-        id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(16).slice(2)}`,
-        name: file.name,
-        size: file.size,
-        url,
-      });
-    };
-    reader.onerror = () => reject(reader.error || new Error(`${file.name} 读取失败`));
-    reader.readAsDataURL(file);
+    readFileAsDataUrl(file)
+      .then((url) => {
+        if (!url.startsWith("data:image/")) {
+          reject(new Error(`${file.name} 读取失败`));
+          return;
+        }
+        resolve({
+          id: `${file.name}-${file.size}-${file.lastModified}-${Math.random().toString(16).slice(2)}`,
+          name: file.name,
+          size: file.size,
+          url,
+        });
+      })
+      .catch(() => reject(new Error(`${file.name} 读取失败`)));
   });
 }
 

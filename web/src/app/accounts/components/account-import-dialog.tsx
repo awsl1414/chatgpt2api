@@ -5,6 +5,7 @@ import { useState } from "react";
 import { FileJson, Files, KeyRound, LoaderCircle, LogIn, ServerCog, Upload } from "lucide-react";
 import { toast } from "sonner";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { AccountJsonPanel, type AccountJsonParseResult } from "@/app/accounts/components/import-panels/account-json-panel";
 import { CodexAuthPanel } from "@/app/accounts/components/import-panels/codex-auth-panel";
 import { OAuthPanel } from "@/app/accounts/components/import-panels/oauth-panel";
@@ -226,12 +227,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       return;
     }
     try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(oauthSession.authorize_url);
-        toast.success("授权 URL 已复制到剪贴板");
-      } else {
-        toast.error("当前环境不支持自动复制，请手动选择并复制");
-      }
+      await copyToClipboard(oauthSession.authorize_url, "授权 URL 已复制到剪贴板");
     } catch {
       toast.error("复制失败，请手动选择并复制");
     }

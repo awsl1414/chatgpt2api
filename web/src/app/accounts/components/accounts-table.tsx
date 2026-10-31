@@ -1,8 +1,8 @@
 "use client";
 
 import { ChevronLeft, ChevronRight, Copy, LoaderCircle, LogIn, Pencil, RefreshCw, Search, Trash2 } from "lucide-react";
-import { toast } from "sonner";
 
+import { copyToClipboard } from "@/lib/clipboard";
 import { statusMeta } from "@/app/accounts/components/status-meta";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -248,8 +248,7 @@ export function AccountsTable({
                           type="button"
                           className="rounded-lg p-1 text-stone-400 transition hover:bg-stone-100 hover:text-stone-700"
                           onClick={() => {
-                            void navigator.clipboard.writeText(account.access_token);
-                            toast.success("token 已复制");
+                            void copyToClipboard(account.access_token, "token 已复制");
                           }}
                         >
                           <Copy className="size-4" />

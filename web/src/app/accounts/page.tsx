@@ -1,9 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { LoaderCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 
+import { useInitialLoad } from "@/hooks/use-initial-load";
+import { copyToClipboard } from "@/lib/clipboard";
 import { AccountEditDialog } from "@/app/accounts/components/account-edit-dialog";
 import { AccountsMetricCards, type MetricKey } from "@/app/accounts/components/accounts-metric-cards";
 import { AccountsTable } from "@/app/accounts/components/accounts-table";
@@ -48,7 +50,6 @@ function displayAccountType(account: Account) {
 }
 
 function AccountsPageContent() {
-  const didLoadRef = useRef(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [availableModels, setAvailableModels] = useState<Model[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -99,14 +100,10 @@ function AccountsPageContent() {
     }
   };
 
-  useEffect(() => {
-    if (didLoadRef.current) {
-      return;
-    }
-    didLoadRef.current = true;
+  useInitialLoad(() => {
     void loadAccounts();
     void loadModels();
-  }, []);
+  });
 
   const filteredAccounts = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
@@ -474,8 +471,7 @@ function AccountsPageContent() {
                     type="button"
                     className="inline-flex cursor-pointer items-center rounded-full border border-stone-200 bg-white px-2.5 py-1 text-xs font-medium text-stone-700 transition hover:border-stone-300 hover:bg-stone-50"
                     onClick={() => {
-                      void navigator.clipboard.writeText(model.id);
-                      toast.success("模型名已复制");
+                      void copyToClipboard(model.id, "模型名已复制");
                     }}
                     title={`点击复制 ${model.id}`}
                   >
