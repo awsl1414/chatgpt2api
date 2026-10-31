@@ -118,5 +118,10 @@ class Logger:
         if self._enabled("error"):
             self._logger.error(self._message(message))
 
+    def exception(self, message: Any) -> None:
+        """error 级别记录并附带当前异常堆栈（须在 except 块内调用）。"""
+        if self._enabled("error"):
+            self._logger.exception(self._message(message))
+
 
 logger = Logger()
