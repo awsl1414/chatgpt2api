@@ -15,8 +15,8 @@ export type ImageLightboxItem = {
   dimensions?: string;
 };
 
-type ImageResultsProps = {
-  selectedConversation: ImageConversation | null;
+/** 结果区的操作回调集合：按用途聚合，避免逐项铺平到 props 上 */
+export type ImageResultsHandlers = {
   onOpenLightbox: (images: ImageLightboxItem[], index: number) => void;
   onContinueEdit: (conversationId: string, image: StoredImage | StoredReferenceImage) => void;
   onDeletePrompt: (conversationId: string, turnId: string) => void;
@@ -26,6 +26,11 @@ type ImageResultsProps = {
   onRetryImage: (conversationId: string, turnId: string, imageId: string) => void | Promise<void>;
   onTimeoutRetryContinue: (taskId: string) => void | Promise<void>;
   onDismissErrors: (conversationId: string, turnId: string) => void | Promise<void>;
+};
+
+type ImageResultsProps = {
+  selectedConversation: ImageConversation | null;
+  handlers: ImageResultsHandlers;
 };
 
 // Blob URL 缓存：避免 base64 超长字符串在 DOM 中，改用短小的 blob: URL
@@ -84,18 +89,18 @@ async function downloadStoredImage(image: StoredImage, index: number) {
   URL.revokeObjectURL(url);
 }
 
-export function ImageResults({
-  selectedConversation,
-  onOpenLightbox,
-  onContinueEdit,
-  onDeletePrompt,
-  onDeleteResults,
-  onReuseTurnConfig,
-  onRegenerateTurn,
-  onRetryImage,
-  onTimeoutRetryContinue,
-  onDismissErrors,
-}: ImageResultsProps) {
+export function ImageResults({ selectedConversation, handlers }: ImageResultsProps) {
+  const {
+    onOpenLightbox,
+    onContinueEdit,
+    onDeletePrompt,
+    onDeleteResults,
+    onReuseTurnConfig,
+    onRegenerateTurn,
+    onRetryImage,
+    onTimeoutRetryContinue,
+    onDismissErrors,
+  } = handlers;
   // 图片尺寸在图片 onLoad 时回填，并随渲染展示，因此用 state 而非 ref
   const [imageDimensions, setImageDimensions] = useState<Record<string, string>>({});
   // 初始为 null：首帧只展示服务端返回的已耗时，避免在渲染期间读取 Date.now()

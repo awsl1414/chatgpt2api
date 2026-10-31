@@ -1,5 +1,5 @@
 "use client";
-import { ArrowUp, ChevronDown, ImagePlus, Info, LoaderCircle, RectangleHorizontal, RectangleVertical, Square, X } from "lucide-react";
+import { ArrowUp, ChevronDown, ImagePlus, Info, LoaderCircle, RectangleHorizontal, RectangleVertical, Square, X, type LucideIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -9,31 +9,24 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { Textarea } from "@/components/ui/textarea";
 import { imageModelLabel, isCodexImageModel } from "@/lib/api/models";
 import type { ImageModel } from "@/lib/api/types";
+import { aspectOptions, codexExclusiveTiers } from "@/lib/image-composer-options";
 import { cn } from "@/lib/utils";
+import type { ImageComposerOptions } from "@/hooks/use-persisted-composer-options";
 
 type ImageComposerProps = {
   prompt: string;
-  imageCount: string;
-  imageRatio: string;
-  imageTier: string;
-  imageWidth: string;
-  imageHeight: string;
-  imageQuality: string;
-  imageModel: ImageModel;
-  imageModels: ImageModel[];
+  /** 生成参数（数量/比例/档位/尺寸/质量/模型），新增参数只需扩展该类型 */
+  options: ImageComposerOptions;
   availableQuota: string;
   activeTaskCount: number;
   referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
   onPromptChange: (value: string) => void;
-  onImageCountChange: (value: string) => void;
-  onImageRatioChange: (value: string) => void;
-  onImageTierChange: (value: string) => void;
-  onImageWidthChange: (value: string) => void;
-  onImageHeightChange: (value: string) => void;
-  onImageQualityChange: (value: string) => void;
-  onImageModelChange: (value: ImageModel) => void;
+  /** 合并式更新生成参数：只传要改的字段 */
+  onOptionsChange: (patch: Partial<ImageComposerOptions>) => void;
+  /** 切换模型单独走此回调，以便同步应用尺寸档位回退 */
+  onModelChange: (model: ImageModel) => void;
   onSubmit: () => void | Promise<void>;
   onPickReferenceImage: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -64,73 +57,39 @@ const qualityOptions = [
   { value: "medium", label: "中" },
   { value: "high", label: "高" },
 ];
-const aspectOptions = [
-  { ratio: "1:1", tier: "1k", width: "1024", height: "1024", label: "1:1", icon: Square },
-  { ratio: "2:3", tier: "1k", width: "1024", height: "1536", label: "2:3", icon: RectangleVertical },
-  { ratio: "3:2", tier: "1k", width: "1536", height: "1024", label: "3:2", icon: RectangleHorizontal },
-  { ratio: "3:4", tier: "1k", width: "1024", height: "1365", label: "3:4", icon: RectangleVertical },
-  { ratio: "4:3", tier: "1k", width: "1365", height: "1024", label: "4:3", icon: RectangleHorizontal },
-  { ratio: "9:16", tier: "1k", width: "1088", height: "1920", label: "9:16", icon: RectangleVertical },
-  { ratio: "16:9", tier: "1k", width: "1920", height: "1088", label: "16:9", icon: RectangleHorizontal },
-  { ratio: "1:1", tier: "2k", width: "2048", height: "2048", label: "1:1(2k)", icon: Square },
-  { ratio: "16:9", tier: "2k", width: "2560", height: "1440", label: "16:9(2k)", icon: RectangleHorizontal },
-  { ratio: "9:16", tier: "2k", width: "1440", height: "2560", label: "9:16(2k)", icon: RectangleVertical },
-  { ratio: "16:9", tier: "4k", width: "3840", height: "2160", label: "16:9(4k)", icon: RectangleHorizontal },
-  { ratio: "9:16", tier: "4k", width: "2160", height: "3840", label: "9:16(4k)", icon: RectangleVertical },
-  { ratio: "auto", tier: "auto", width: "1024", height: "1024", label: "auto", icon: null },
-];
+
+/** 宽高比按钮的图标映射：数据来自 lib/image-composer-options，图标仅属于视图层 */
+const aspectIcons: Record<string, LucideIcon | null> = {
+  "1:1": Square,
+  "2:3": RectangleVertical,
+  "3:2": RectangleHorizontal,
+  "3:4": RectangleVertical,
+  "4:3": RectangleHorizontal,
+  "9:16": RectangleVertical,
+  "16:9": RectangleHorizontal,
+  auto: null,
+};
+
 const countOptions = Array.from({ length: 10 }, (_, index) => String(index + 1));
-
-// 2K/4K 档位仅 Codex 模型支持，非 Codex 模型的宽高比选项需要置灰
-const codexExclusiveTiers = new Set(["2k", "4k"]);
-
-type AspectOption = { ratio: string; tier: string; width: string; height: string };
-
-// 切换到非 Codex 模型时，若当前档位不被支持，回退到同比例的 1K 档（无匹配则回 auto）。
-// 返回 null 表示当前尺寸无需调整。
-export function aspectFallbackForModel(
-  model: ImageModel,
-  ratio: string,
-  tier: string,
-): AspectOption | null {
-  if (isCodexImageModel(model) || !codexExclusiveTiers.has(tier)) {
-    return null;
-  }
-  return (
-    aspectOptions.find((option) => option.tier === "1k" && option.ratio === ratio) ??
-    aspectOptions.find((option) => option.tier === "auto") ??
-    null
-  );
-}
 
 export function ImageComposer({
   prompt,
-  imageCount,
-  imageRatio,
-  imageTier,
-  imageWidth,
-  imageHeight,
-  imageQuality,
-  imageModel,
-  imageModels,
+  options,
   availableQuota,
   activeTaskCount,
   referenceImages,
   textareaRef,
   fileInputRef,
   onPromptChange,
-  onImageCountChange,
-  onImageRatioChange,
-  onImageTierChange,
-  onImageWidthChange,
-  onImageHeightChange,
-  onImageQualityChange,
-  onImageModelChange,
+  onOptionsChange,
+  onModelChange,
   onSubmit,
   onPickReferenceImage,
   onReferenceImageChange,
   onRemoveReferenceImage,
 }: ImageComposerProps) {
+  const { imageCount, imageRatio, imageTier, imageWidth, imageHeight, imageQuality, imageModel, imageModels } =
+    options;
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isSizeMenuOpen, setIsSizeMenuOpen] = useState(false);
@@ -383,7 +342,7 @@ export function ImageComposer({
                           <Select
                             value={imageModel}
                             onValueChange={(value) => {
-                              onImageModelChange(value as ImageModel);
+                              onModelChange(value as ImageModel);
                             }}
                           >
                             <SelectTrigger className="h-10 rounded-xl border-stone-200 bg-white text-sm shadow-none">
@@ -429,7 +388,7 @@ export function ImageComposer({
                                     "h-9 cursor-pointer rounded-full border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
                                     active && "border-stone-950 bg-white font-medium text-stone-950",
                                   )}
-                                  onClick={() => onImageQualityChange(option.value)}
+                                  onClick={() => onOptionsChange({ imageQuality: option.value })}
                                 >
                                   {option.label}
                                 </button>
@@ -449,7 +408,7 @@ export function ImageComposer({
                                 inputMode="numeric"
                                 min="1"
                                 value={imageWidth}
-                                onChange={(event) => onImageWidthChange(event.target.value)}
+                                onChange={(event) => onOptionsChange({ imageWidth: event.target.value })}
                                 className="h-7 border-0 bg-transparent px-0 text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
                               />
                             </div>
@@ -461,7 +420,7 @@ export function ImageComposer({
                                 inputMode="numeric"
                                 min="1"
                                 value={imageHeight}
-                                onChange={(event) => onImageHeightChange(event.target.value)}
+                                onChange={(event) => onOptionsChange({ imageHeight: event.target.value })}
                                 className="h-7 border-0 bg-transparent px-0 text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
                               />
                             </div>
@@ -474,7 +433,7 @@ export function ImageComposer({
                           <div className="grid grid-cols-4 gap-2 sm:grid-cols-5">
                             {aspectOptions.map((option) => {
                               const active = option.ratio === imageRatio && option.tier === imageTier && option.width === imageWidth && option.height === imageHeight;
-                              const Icon = option.icon;
+                              const Icon = aspectIcons[option.ratio];
                               const disabled = !isCodexModel && codexExclusiveTiers.has(option.tier);
                               return (
                                 <button
@@ -490,10 +449,12 @@ export function ImageComposer({
                                     if (disabled) {
                                       return;
                                     }
-                                    onImageRatioChange(option.ratio);
-                                    onImageTierChange(option.tier);
-                                    onImageWidthChange(option.width);
-                                    onImageHeightChange(option.height);
+                                    onOptionsChange({
+                                      imageRatio: option.ratio,
+                                      imageTier: option.tier,
+                                      imageWidth: option.width,
+                                      imageHeight: option.height,
+                                    });
                                   }}
                                 >
                                   {Icon ? (
@@ -525,7 +486,7 @@ export function ImageComposer({
                                     "h-9 cursor-pointer rounded-full border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
                                     active && "border-stone-950 bg-white font-medium text-stone-950",
                                   )}
-                                  onClick={() => onImageCountChange(option)}
+                                  onClick={() => onOptionsChange({ imageCount: option })}
                                 >
                                   {option} 张
                                 </button>
@@ -538,7 +499,7 @@ export function ImageComposer({
                               max="100"
                               step="1"
                               value={imageCount}
-                              onChange={(event) => onImageCountChange(event.target.value)}
+                              onChange={(event) => onOptionsChange({ imageCount: event.target.value })}
                               className="h-9 rounded-full border-stone-200 bg-white px-3 text-center text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
                             />
                           </div>

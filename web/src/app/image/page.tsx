@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { DeleteConfirmDialog, type ImageDeleteConfirmTarget } from "@/app/image/components/delete-confirm-dialog";
 import { HistoryDialog } from "@/app/image/components/history-dialog";
 import { ImageComposer } from "@/app/image/components/image-composer";
-import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
+import { ImageResults, type ImageLightboxItem, type ImageResultsHandlers } from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { AuthGuard } from "@/components/auth-guard";
@@ -60,22 +60,15 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const renameConversationAction = useImageConversationsStore((state) => state.renameConversation);
 
   const {
-    imageCount,
     imageRatio,
     imageTier,
     imageWidth,
     imageHeight,
     imageQuality,
     imageModel,
-    imageModels,
+    options: composerOptions,
+    patchOptions,
     parsedCount,
-    setImageCount,
-    setImageRatio,
-    setImageTier,
-    setImageWidth,
-    setImageHeight,
-    setImageQuality,
-    setImageModel,
     handleImageModelChange,
     loadPersistedOptions,
   } = usePersistedComposerOptions();
@@ -325,19 +318,21 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
       setSelectedConversationId(conversationId);
       setImagePrompt(turn.prompt);
-      setImageCount(String(Math.max(1, turn.count || turn.images.length || 1)));
-      setImageRatio(turn.ratio);
-      setImageTier(turn.tier);
       const parsedSize = parseImageSize(turn.size);
-      setImageWidth(parsedSize.width);
-      setImageHeight(parsedSize.height);
-      setImageQuality(turn.quality);
-      setImageModel(turn.model);
+      patchOptions({
+        imageCount: String(Math.max(1, turn.count || turn.images.length || 1)),
+        imageRatio: turn.ratio,
+        imageTier: turn.tier,
+        imageWidth: parsedSize.width,
+        imageHeight: parsedSize.height,
+        imageQuality: turn.quality,
+        imageModel: turn.model,
+      });
       reference.reuseFromTurn(turn.referenceImages);
       textareaRef.current?.focus();
       toast.success("已复用这条提示词配置");
     },
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- reference 各方法与 composer setter 均为稳定引用
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reference 各方法与 patchOptions 均为稳定引用
     [setSelectedConversationId],
   );
 
@@ -464,6 +459,30 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     [updateConversation],
   );
 
+  // 结果区回调聚合：ImageResults 只接收一个 handlers 对象，新增操作只改此处的类型与映射
+  const resultsHandlers = useMemo<ImageResultsHandlers>(
+    () => ({
+      onOpenLightbox: openLightbox,
+      onContinueEdit: reference.continueEdit,
+      onDeletePrompt: openDeletePromptConfirm,
+      onDeleteResults: openDeleteResultsConfirm,
+      onReuseTurnConfig: handleReuseTurnConfig,
+      onRegenerateTurn: handleRegenerateTurn,
+      onRetryImage: handleRetryImage,
+      onTimeoutRetryContinue: handleTimeoutRetryContinue,
+      onDismissErrors: handleDismissErrors,
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reference 的各方法在 hook 内均为稳定引用
+    [
+      openLightbox,
+      handleReuseTurnConfig,
+      handleRegenerateTurn,
+      handleRetryImage,
+      handleTimeoutRetryContinue,
+      handleDismissErrors,
+    ],
+  );
+
   const handleSubmit = async () => {
     const prompt = imagePrompt.trim();
     if (!prompt) {
@@ -567,15 +586,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             >
               <ImageResults
                 selectedConversation={selectedConversation}
-                onOpenLightbox={openLightbox}
-                onContinueEdit={reference.continueEdit}
-                onDeletePrompt={openDeletePromptConfirm}
-                onDeleteResults={openDeleteResultsConfirm}
-                onReuseTurnConfig={handleReuseTurnConfig}
-                onRegenerateTurn={handleRegenerateTurn}
-                onRetryImage={handleRetryImage}
-                onTimeoutRetryContinue={handleTimeoutRetryContinue}
-                onDismissErrors={handleDismissErrors}
+                handlers={resultsHandlers}
               />
             </div>
 
@@ -594,27 +605,15 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 
           <ImageComposer
             prompt={imagePrompt}
-            imageCount={imageCount}
-            imageRatio={imageRatio}
-            imageTier={imageTier}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            imageQuality={imageQuality}
-            imageModel={imageModel}
-            imageModels={imageModels}
+            options={composerOptions}
             availableQuota={availableQuota}
             activeTaskCount={activeTaskCount}
             referenceImages={reference.referenceImages}
             textareaRef={textareaRef}
             fileInputRef={fileInputRef}
             onPromptChange={setImagePrompt}
-            onImageCountChange={setImageCount}
-            onImageRatioChange={setImageRatio}
-            onImageTierChange={setImageTier}
-            onImageWidthChange={setImageWidth}
-            onImageHeightChange={setImageHeight}
-            onImageQualityChange={setImageQuality}
-            onImageModelChange={handleImageModelChange}
+            onOptionsChange={patchOptions}
+            onModelChange={handleImageModelChange}
             onSubmit={handleSubmit}
             onPickReferenceImage={() => fileInputRef.current?.click()}
             onReferenceImageChange={reference.append}

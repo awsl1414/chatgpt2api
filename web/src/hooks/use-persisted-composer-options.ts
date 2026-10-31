@@ -2,9 +2,9 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { aspectFallbackForModel } from "@/app/image/components/image-composer";
 import { fetchModels } from "@/lib/api/models";
 import type { ImageModel } from "@/lib/api/types";
+import { aspectFallbackForModel } from "@/lib/image-composer-options";
 import { clampImageCount, filterImageModels, normalizeStoredImageModel } from "@/lib/image-utils";
 import {
   IMAGE_COUNT_STORAGE_KEY,
@@ -14,7 +14,11 @@ import {
   IMAGE_TIER_STORAGE_KEY,
 } from "@/lib/image-storage-keys";
 
-type UsePersistedComposerOptionsResult = {
+/**
+ * 图片生成参数（不含提示词与参考图）。
+ * 作为 ImageComposer 的单一受控值对象传递，新增参数只需在类型与默认值处各改一次。
+ */
+export type ImageComposerOptions = {
   imageCount: string;
   imageRatio: string;
   imageTier: string;
@@ -23,15 +27,15 @@ type UsePersistedComposerOptionsResult = {
   imageQuality: string;
   imageModel: ImageModel;
   imageModels: ImageModel[];
+};
+
+type UsePersistedComposerOptionsResult = ImageComposerOptions & {
+  /** 收敛后的生成参数对象，直接作为 ImageComposer 的 options prop */
+  options: ImageComposerOptions;
+  /** 合并式更新生成参数：只传要改的字段，其余保持当前值 */
+  patchOptions: (patch: Partial<ImageComposerOptions>) => void;
   /** imageCount 的合法整数值（[1, 100]） */
   parsedCount: number;
-  setImageCount: (value: string) => void;
-  setImageRatio: (value: string) => void;
-  setImageTier: (value: string) => void;
-  setImageWidth: (value: string) => void;
-  setImageHeight: (value: string) => void;
-  setImageQuality: (value: string) => void;
-  setImageModel: (value: ImageModel) => void;
   /** 切换模型时同步校验档位：非 Codex 模型自动回退同比例 1K 档 */
   handleImageModelChange: (model: ImageModel) => void;
   /** 挂载/bfcache 恢复时从 localStorage 读回持久化的 composer 选项（由页面 loadHistory 调用） */
@@ -60,6 +64,42 @@ export function usePersistedComposerOptions(): UsePersistedComposerOptionsResult
   const setImageCount = useCallback((value: string) => {
     setImageCountRaw(value ? clampImageCount(value) : "");
   }, []);
+
+  const options = useMemo<ImageComposerOptions>(
+    () => ({ imageCount, imageRatio, imageTier, imageWidth, imageHeight, imageQuality, imageModel, imageModels }),
+    [imageCount, imageRatio, imageTier, imageWidth, imageHeight, imageQuality, imageModel, imageModels],
+  );
+
+  /**
+   * 合并式更新生成参数：只覆盖 patch 中出现的字段。
+   * imageCount 仍走 clamp 收敛，其余字段原样写入，与逐个 setter 的行为一致。
+   */
+  const patchOptions = useCallback((patch: Partial<ImageComposerOptions>) => {
+    if (patch.imageCount !== undefined) {
+      setImageCount(patch.imageCount);
+    }
+    if (patch.imageRatio !== undefined) {
+      setImageRatio(patch.imageRatio);
+    }
+    if (patch.imageTier !== undefined) {
+      setImageTier(patch.imageTier);
+    }
+    if (patch.imageWidth !== undefined) {
+      setImageWidth(patch.imageWidth);
+    }
+    if (patch.imageHeight !== undefined) {
+      setImageHeight(patch.imageHeight);
+    }
+    if (patch.imageQuality !== undefined) {
+      setImageQuality(patch.imageQuality);
+    }
+    if (patch.imageModel !== undefined) {
+      setImageModel(patch.imageModel);
+    }
+    if (patch.imageModels !== undefined) {
+      setImageModels(patch.imageModels);
+    }
+  }, [setImageCount]);
 
   const loadPersistedOptions = useCallback(() => {
     if (typeof window === "undefined") {
@@ -147,14 +187,9 @@ export function usePersistedComposerOptions(): UsePersistedComposerOptionsResult
     imageQuality,
     imageModel,
     imageModels,
+    options,
+    patchOptions,
     parsedCount,
-    setImageCount,
-    setImageRatio,
-    setImageTier,
-    setImageWidth,
-    setImageHeight,
-    setImageQuality,
-    setImageModel,
     handleImageModelChange,
     loadPersistedOptions,
   };
