@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, History, LoaderCircle, Plus, Trash2 } from "lucide-react";
+import { ArrowDown, History, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 import { DeleteConfirmDialog, type ImageDeleteConfirmTarget } from "@/app/image/components/delete-confirm-dialog";
@@ -10,6 +10,7 @@ import { ImageComposer } from "@/app/image/components/image-composer";
 import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
 import { usePersistedComposerOptions } from "@/hooks/use-persisted-composer-options";
 import { useReferenceImages } from "@/hooks/use-reference-images";
@@ -28,7 +29,6 @@ import {
   recoverConversationHistory,
 } from "@/lib/image-task-state";
 import { formatAvailableQuota, parseImageSize, pickFallbackConversationId } from "@/lib/image-utils";
-import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useConfigStore } from "@/app/settings/store/config";
 import { actionError } from "@/lib/action-result";
 import {
@@ -643,15 +643,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
 }
 
 export default function ImagePage() {
-  const { isCheckingAuth, session } = useAuthGuard();
-
-  if (isCheckingAuth || !session) {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
-      </div>
-    );
-  }
-
-  return <ImagePageContent isAdmin={session.role === "admin"} />;
+  return (
+    <AuthGuard>
+      {(session) => <ImagePageContent isAdmin={session.role === "admin"} />}
+    </AuthGuard>
+  );
 }

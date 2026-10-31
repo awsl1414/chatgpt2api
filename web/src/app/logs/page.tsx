@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, ImageIcon, LoaderCircle, RefreshCw, Search, 
 import { toast } from "sonner";
 
 import { DateRangeFilter } from "@/components/date-range-filter";
+import { AuthGuard } from "@/components/auth-guard";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { ImageThumbnail, getImageThumbnailUrl } from "@/components/image-thumbnail";
 import { Badge } from "@/components/ui/badge";
@@ -16,7 +17,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { deleteSystemLogs, fetchSystemLogs, type SystemLog } from "@/lib/api/logs";
 import { usePagination } from "@/hooks/use-pagination";
-import { useAuthGuard } from "@/lib/use-auth-guard";
 import { actionError } from "@/lib/action-result";
 
 const LogType = {
@@ -346,9 +346,9 @@ function LogsContent() {
 }
 
 export default function LogsPage() {
-  const { isCheckingAuth, session } = useAuthGuard(["admin"]);
-  if (isCheckingAuth || !session || session.role !== "admin") {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-400" /></div>;
-  }
-  return <LogsContent />;
+  return (
+    <AuthGuard roles={["admin"]}>
+      {() => <LogsContent />}
+    </AuthGuard>
+  );
 }

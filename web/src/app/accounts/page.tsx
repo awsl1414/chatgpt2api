@@ -5,6 +5,7 @@ import { LoaderCircle, Search } from "lucide-react";
 import { toast } from "sonner";
 
 import { useInitialLoad } from "@/hooks/use-initial-load";
+import { AuthGuard } from "@/components/auth-guard";
 import { copyToClipboard } from "@/lib/clipboard";
 import { AccountEditDialog } from "@/app/accounts/components/account-edit-dialog";
 import { AccountsMetricCards, type MetricKey } from "@/app/accounts/components/accounts-metric-cards";
@@ -31,7 +32,6 @@ import {
   type AccountStatus,
 } from "@/lib/api/accounts";
 import { fetchModels, type Model } from "@/lib/api/models";
-import { useAuthGuard } from "@/lib/use-auth-guard";
 import { actionError } from "@/lib/action-result";
 
 // 导出全部 Token：纯 DOM 下载行为，不参与渲染
@@ -603,15 +603,9 @@ function AccountsPageContent() {
 }
 
 export default function AccountsPage() {
-  const { isCheckingAuth, session } = useAuthGuard(["admin"]);
-
-  if (isCheckingAuth || !session || session.role !== "admin") {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
-      </div>
-    );
-  }
-
-  return <AccountsPageContent />;
+  return (
+    <AuthGuard roles={["admin"]}>
+      {() => <AccountsPageContent />}
+    </AuthGuard>
+  );
 }

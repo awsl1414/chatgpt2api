@@ -1,11 +1,10 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
 import { toast } from "sonner";
 
+import { AuthGuard } from "@/components/auth-guard";
 import { useInitialLoad } from "@/hooks/use-initial-load";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useAuthGuard } from "@/lib/use-auth-guard";
 
 import { BackupSettingsCard } from "./components/backup-settings-card";
 import { ApiDocsCard } from "./components/api-docs-card";
@@ -91,15 +90,9 @@ function SettingsPageContent() {
 }
 
 export default function SettingsPage() {
-  const { isCheckingAuth, session } = useAuthGuard(["admin"]);
-
-  if (isCheckingAuth || !session || session.role !== "admin") {
-    return (
-      <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
-      </div>
-    );
-  }
-
-  return <SettingsPageContent />;
+  return (
+    <AuthGuard roles={["admin"]}>
+      {() => <SettingsPageContent />}
+    </AuthGuard>
+  );
 }
