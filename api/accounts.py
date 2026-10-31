@@ -1,13 +1,15 @@
+"""管理面路由：账号池 CRUD/刷新/重登/OAuth 导入、用户密钥、CPA 与 Sub2API 连接管理。
+
+所有端点要求 admin 身份；进度型操作（refresh/re-login/import）返回 progress_id，
+由前端轮询对应 progress 端点获取结果。
+"""
 from __future__ import annotations
 
 import asyncio
-import io
 import json
-import re
 import uuid
-import zipfile
 from datetime import datetime
-from typing import Any, Literal
+from typing import Any, Coroutine, Literal
 
 from fastapi import APIRouter, Header, HTTPException
 from fastapi.concurrency import run_in_threadpool
@@ -25,6 +27,7 @@ from api.support import (
     sanitize_sub2api_servers,
 )
 from services.account_service import account_service
+from services.account.models import account_payload_token
 from services.errors import CpaError
 from services.cpa_service import cpa_config, cpa_import_service, list_remote_files
 from services.oauth_login_service import OAuthLoginError, oauth_login_service
@@ -34,6 +37,17 @@ from services.sub2api_service import (
     sub2api_config,
     sub2api_import_service,
 )
+
+# 后台任务强引用集：asyncio.create_task 的返回值若不持有引用，
+# 任务可能在完成前被垃圾回收（Python 官方文档明确警告），完成回调负责移除
+_background_tasks: set[asyncio.Task[None]] = set()
+
+
+def _spawn_background_task(coro: Coroutine[Any, Any, None]) -> None:
+    """调度后台协程并持有强引用直到其完成。"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 
@@ -122,41 +136,12 @@ class OAuthLoginFinishRequest(BaseModel):
     callback: str = ""
 
 
-def _account_payload_token(item: dict[str, Any]) -> str:
-    return str(item.get("access_token") or item.get("accessToken") or "").strip()
-
-
 def _unique_tokens(tokens: list[str]) -> list[str]:
     return list(dict.fromkeys(str(token or "").strip() for token in tokens if str(token or "").strip()))
 
 
 def _download_timestamp() -> str:
     return datetime.now().strftime("%Y%m%d-%H%M%S")
-
-
-def _safe_export_name(value: str, fallback: str) -> str:
-    clean = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
-    return (clean or fallback)[:80]
-
-
-def _account_zip_bytes(items: list[dict[str, str]]) -> bytes:
-    buf = io.BytesIO()
-    used_names: set[str] = set()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
-        for index, item in enumerate(items, start=1):
-            raw_name = item.get("email") or item.get("account_id") or f"account-{index:03d}"
-            base_name = _safe_export_name(raw_name, f"account-{index:03d}")
-            name = base_name
-            suffix = 2
-            while name in used_names:
-                name = f"{base_name}-{suffix}"
-                suffix += 1
-            used_names.add(name)
-            archive.writestr(
-                f"{name}.json",
-                json.dumps(item, ensure_ascii=False, indent=2) + "\n",
-            )
-    return buf.getvalue()
 
 
 def create_router() -> APIRouter:
@@ -218,7 +203,7 @@ def create_router() -> APIRouter:
     async def create_accounts(body: AccountCreateRequest, authorization: str | None = Header(default=None)):
         require_admin(authorization)
         account_payloads = [item for item in body.accounts if isinstance(item, dict)]
-        payload_tokens = [_account_payload_token(item) for item in account_payloads]
+        payload_tokens = [account_payload_token(item) for item in account_payloads]
         tokens = _unique_tokens([*body.tokens, *payload_tokens])
         if not tokens:
             raise HTTPException(status_code=400, detail={"error": "tokens is required"})
@@ -265,7 +250,7 @@ def create_router() -> APIRouter:
             except Exception as e:
                 account_service.finish_refresh_progress(progress_id, error=str(e))
 
-        asyncio.create_task(_do_refresh())
+        _spawn_background_task(_do_refresh())
 
         return {"progress_id": progress_id}
 
@@ -293,7 +278,7 @@ def create_router() -> APIRouter:
             except Exception as e:
                 account_service.finish_relogin_progress(progress_id, error=str(e))
 
-        asyncio.create_task(_do_relogin())
+        _spawn_background_task(_do_relogin())
 
         return {"progress_id": progress_id}
 
@@ -318,7 +303,8 @@ def create_router() -> APIRouter:
 
         timestamp = _download_timestamp()
         if body.format == "zip":
-            content = _account_zip_bytes(items)
+            # zip 打包在 service 层完成（审计 B-中2），时间戳以导出时刻为准保持一致
+            content, timestamp = account_service.build_export_zip(access_tokens)
             return Response(
                 content,
                 media_type="application/zip",

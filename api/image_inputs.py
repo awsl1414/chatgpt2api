@@ -1,3 +1,7 @@
+"""图片编辑请求的输入解析：multipart 上传、JSON image_url、data URL 与远程下载统一为图片元组。
+
+所有路径共享 50MB 大小上限；文件名统一安全化，防止路径注入。
+"""
 from __future__ import annotations
 
 import base64
@@ -295,12 +299,20 @@ async def read_image_sources(sources: list[ImageSource]) -> list[ImageInput]:
             images.append(source)
             continue
         if _is_upload(source):
+            # 大小上限与 base64/data URL/远程下载三条路径一致：先查声明的
+            # size（Starlette 已记录 spool 后的实际字节数），读取后再兜底校验，
+            # 防止超大 multipart 上传把整份内容读进内存
+            declared_size = source.size
+            if declared_size is not None and declared_size > MAX_IMAGE_REFERENCE_BYTES:
+                raise HTTPException(status_code=400, detail={"error": "image file exceeds 50MB limit"})
             try:
                 image_data = await source.read()
             finally:
                 await source.close()
             if not image_data:
                 raise HTTPException(status_code=400, detail={"error": "image file is empty"})
+            if len(image_data) > MAX_IMAGE_REFERENCE_BYTES:
+                raise HTTPException(status_code=400, detail={"error": "image file exceeds 50MB limit"})
             images.append((image_data, source.filename or "image.png", source.content_type or "image/png"))
             continue
         images.append(await run_in_threadpool(_download_image_url, source))
