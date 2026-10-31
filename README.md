@@ -55,7 +55,7 @@ cd chatgpt2api
 docker compose up -d
 ```
 
-启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
+启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。完整配置模板见 [`config.example.json`](./config.example.json)（内置默认值，可直接复制后修改），逐字段说明见 [`config.example.md`](./config.example.md)。
 
 - Web 面板：`http://localhost:3000`
 - API 地址：`http://localhost:3000/v1`
