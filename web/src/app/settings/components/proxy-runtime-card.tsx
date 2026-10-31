@@ -18,7 +18,7 @@ import {
   type ProxyRuntimeEgressMode,
   type ProxyTestResult,
 } from "@/lib/api/settings";
-import { toastActionResult } from "@/lib/action-result";
+import { actionError, toastActionResult } from "@/lib/action-result";
 
 import { useConfigStore } from "../store/config";
 
@@ -73,7 +73,7 @@ export function ProxyRuntimeCard() {
         toast.error(`清障代理不可用：${data.result.error ?? "未知错误"}`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试清障代理失败");
+      toast.error(actionError(error, "测试清障代理失败"));
     } finally {
       setIsTestingProxy(false);
     }
@@ -96,7 +96,7 @@ export function ProxyRuntimeCard() {
         toast.error(`Clearance 获取失败：${data.result.error ?? data.result.status}`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试 Clearance 失败");
+      toast.error(actionError(error, "测试 Clearance 失败"));
     } finally {
       setIsTestingClearance(false);
     }

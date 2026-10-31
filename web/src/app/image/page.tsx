@@ -30,6 +30,7 @@ import {
 import { formatAvailableQuota, parseImageSize, pickFallbackConversationId } from "@/lib/image-utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useConfigStore } from "@/app/settings/store/config";
+import { actionError } from "@/lib/action-result";
 import {
   getImageConversationStats,
   listImageConversations,
@@ -123,7 +124,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
           : null) ?? pickFallbackConversationId(normalizedItems);
       setSelectedConversationId(nextSelectedConversationId);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "读取会话记录失败");
+      toast.error(actionError(error, "读取会话记录失败"));
     } finally {
       if (!loadCancelledRef.current) {
         setLoadingHistory(false);
@@ -240,7 +241,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         resetComposer();
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除会话失败");
+      toast.error(actionError(error, "删除会话失败"));
       setConversations(await listImageConversations());
     }
   };
@@ -265,7 +266,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       resetComposer();
       toast.success("已清空历史记录");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "清空历史记录失败");
+      toast.error(actionError(error, "清空历史记录失败"));
     }
   };
 
@@ -273,7 +274,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     try {
       await renameConversationAction(id, title);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "重命名失败");
+      toast.error(actionError(error, "重命名失败"));
     }
   };
 
@@ -436,7 +437,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
         }));
         toast.info(`已继续等待 ${imageTimeoutRetrySecs} 秒`);
       } catch (err) {
-        toast.error(err instanceof Error ? err.message : "续轮询失败");
+        toast.error(actionError(err, "续轮询失败"));
       }
     },
     [imageTimeoutRetrySecs, updateConversation],

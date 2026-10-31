@@ -12,6 +12,7 @@ import { HeaderActions } from "@/components/header-actions";
 import { login } from "@/lib/api/auth-keys";
 import { useRedirectIfAuthenticated } from "@/lib/use-auth-guard";
 import { getDefaultRouteForRole, setStoredAuthSession } from "@/store/auth";
+import { actionError } from "@/lib/action-result";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -37,7 +38,7 @@ export default function LoginPage() {
       });
       router.replace(getDefaultRouteForRole(data.role));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "登录失败";
+      const message = actionError(error, "登录失败");
       toast.error(message);
     } finally {
       setIsSubmitting(false);

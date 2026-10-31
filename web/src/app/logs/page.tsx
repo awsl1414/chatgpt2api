@@ -17,6 +17,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { deleteSystemLogs, fetchSystemLogs, type SystemLog } from "@/lib/api/logs";
 import { usePagination } from "@/hooks/use-pagination";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { actionError } from "@/lib/action-result";
 
 const LogType = {
   Call: "call",
@@ -79,7 +80,7 @@ function LogsContent() {
       setSelectedIds((current) => current.filter((id) => data.items.some((item) => item.id === id)));
       setPage(1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载日志失败");
+      toast.error(actionError(error, "加载日志失败"));
     } finally {
       setIsLoading(false);
     }
@@ -120,7 +121,7 @@ function LogsContent() {
       }
       await loadLogs();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除日志失败");
+      toast.error(actionError(error, "删除日志失败"));
     } finally {
       setIsDeleting(false);
     }

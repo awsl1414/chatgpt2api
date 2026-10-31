@@ -17,6 +17,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { compressAllImages, deleteImageTag, deleteManagedImages, deleteToTarget, downloadImages, downloadSingleImage, fetchImageStorage, fetchImageTags, fetchManagedImages, setImageTags, type ImageStorageStats, type ManagedImage } from "@/lib/api/images";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { usePagination } from "@/hooks/use-pagination";
+import { actionError } from "@/lib/action-result";
 
 const LONG_PRESS_MS = 800;
 const IMAGE_MANAGER_CHECKBOX_CLASS = "border-stone-300 bg-white/80 dark:border-white/35 dark:bg-white/5 data-[state=checked]:border-stone-950 dark:data-[state=checked]:border-white";
@@ -122,7 +123,7 @@ function ImageManagerContent() {
       setSelectedPaths((current) => current.filter((path) => data.items.some((item) => imageKey(item) === path)));
       setPage(1);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载图片失败");
+      toast.error(actionError(error, "加载图片失败"));
     } finally {
       setIsLoading(false);
     }
@@ -148,7 +149,7 @@ function ImageManagerContent() {
       setSelectedPaths((prev) => prev.filter((p) => p !== imageKey(deleteTarget)));
       toast.success("图片已删除");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除失败");
+      toast.error(actionError(error, "删除失败"));
     } finally {
       setIsDeleting(false);
       closeDialog();
@@ -162,7 +163,7 @@ function ImageManagerContent() {
       const tagsData = await fetchImageTags();
       setAllTags(tagsData.tags);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "设置标签失败");
+      toast.error(actionError(error, "设置标签失败"));
     }
   };
 
@@ -202,7 +203,7 @@ function ImageManagerContent() {
       })));
       toast.success(`标签"${tag}"已删除，影响 ${result.removed_from} 张图片`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除标签失败");
+      toast.error(actionError(error, "删除标签失败"));
     }
   };
 
@@ -242,7 +243,7 @@ function ImageManagerContent() {
       setSelectedPaths([]);
       await loadImages();
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除图片失败");
+      toast.error(actionError(error, "删除图片失败"));
     } finally {
       setIsDeleting(false);
     }
@@ -256,7 +257,7 @@ function ImageManagerContent() {
       await downloadImages(paths);
       toast.success(`已下载 ${paths.length} 张图片`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "下载失败");
+      toast.error(actionError(error, "下载失败"));
     } finally {
       setIsDownloading(false);
     }

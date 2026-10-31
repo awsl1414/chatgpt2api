@@ -19,6 +19,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { createUserKey, deleteUserKey, fetchUserKeys, updateUserKey, type UserKey } from "@/lib/api/auth-keys";
 import { useInitialLoad } from "@/hooks/use-initial-load";
+import { actionError } from "@/lib/action-result";
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -56,7 +57,7 @@ export function UserKeysCard() {
       const data = await fetchUserKeys();
       setItems(data.items);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载用户密钥失败");
+      toast.error(actionError(error, "加载用户密钥失败"));
     } finally {
       setIsLoading(false);
     }
@@ -74,7 +75,7 @@ export function UserKeysCard() {
       setIsDialogOpen(false);
       toast.success("用户密钥已创建");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "创建用户密钥失败");
+      toast.error(actionError(error, "创建用户密钥失败"));
     } finally {
       setIsCreating(false);
     }
@@ -99,7 +100,7 @@ export function UserKeysCard() {
       setItems(data.items);
       toast.success(item.enabled ? "用户密钥已禁用" : "用户密钥已启用");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新用户密钥失败");
+      toast.error(actionError(error, "更新用户密钥失败"));
     } finally {
       setItemPending(item.id, false);
     }
@@ -117,7 +118,7 @@ export function UserKeysCard() {
       setDeletingItem(null);
       toast.success("用户密钥已删除");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除用户密钥失败");
+      toast.error(actionError(error, "删除用户密钥失败"));
     } finally {
       setItemPending(item.id, false);
     }
@@ -151,7 +152,7 @@ export function UserKeysCard() {
       setEditKey("");
       toast.success(trimmedKey ? "用户密钥已更新" : "用户名称已更新");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新用户密钥失败");
+      toast.error(actionError(error, "更新用户密钥失败"));
     } finally {
       setItemPending(item.id, false);
     }

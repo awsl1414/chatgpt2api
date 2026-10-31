@@ -5,6 +5,7 @@
  */
 
 import { toast } from "sonner";
+import { actionError } from "@/lib/action-result";
 
 /** 复制文本到剪贴板；成功返回 true 并 toast 成功文案，失败/环境不支持返回 false */
 export async function copyToClipboard(text: string, successMessage = "已复制到剪贴板"): Promise<boolean> {
@@ -17,7 +18,7 @@ export async function copyToClipboard(text: string, successMessage = "已复制�
     toast.success(successMessage);
     return true;
   } catch (error) {
-    toast.error(error instanceof Error ? error.message : "复制失败，请手动复制");
+    toast.error(actionError(error, "复制失败，请手动复制"));
     return false;
   }
 }

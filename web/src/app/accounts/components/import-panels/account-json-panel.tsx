@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { getAccountJsonAccounts, readFileAsText } from "@/lib/account-import-parse";
 import type { AccountImportPayload } from "@/lib/api/accounts";
+import { actionError } from "@/lib/action-result";
 
 // 一次文件读取的汇总结果：解析出的账号 + 未能提取成功的文件数
 export type AccountJsonParseResult = {
@@ -57,7 +58,7 @@ export function AccountJsonPanel({ isSubmitting, pending, onParsed, onBack }: Ac
 
       onParsed({ tokens, accounts, parsedAccountCount, errorCount });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "读取账号 JSON 文件失败";
+      const message = actionError(error, "读取账号 JSON 文件失败");
       toast.error(message);
     }
   };

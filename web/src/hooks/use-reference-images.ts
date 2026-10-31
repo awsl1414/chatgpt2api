@@ -5,6 +5,7 @@ import { toast } from "sonner";
 
 import { buildReferenceImageFromStoredImage, dataUrlToFile, readFileAsDataUrl } from "@/lib/image-reference";
 import type { StoredImage, StoredReferenceImage } from "@/store/image-conversations";
+import { actionError } from "@/lib/action-result";
 
 type UseReferenceImagesOptions = {
   /** composer 内隐藏的文件选择 input */
@@ -69,7 +70,7 @@ export function useReferenceImages({
         setReferenceImages((prev) => [...prev, ...previews]);
         resetFileInput();
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "读取参考图失败");
+        toast.error(actionError(error, "读取参考图失败"));
       }
     },
     [resetFileInput],
@@ -116,7 +117,7 @@ export function useReferenceImages({
         textareaRef.current?.focus();
         toast.success("已加入当前参考图，继续输入描述即可编辑");
       } catch (error) {
-        toast.error(error instanceof Error ? error.message : "读取结果图失败");
+        toast.error(actionError(error, "读取结果图失败"));
       }
     },
     [setSelectedConversationId, textareaRef],

@@ -14,6 +14,7 @@ import { createImageEditTask, createImageGenerationTask, fetchImageTasks, type I
 import { dataUrlToFile } from "@/lib/image-reference";
 import { deriveTurnStatus, taskDataToStoredImage } from "@/lib/image-task-state";
 import { useImageConversationsStore } from "@/store/image-conversations";
+import { actionError } from "@/lib/action-result";
 
 const POLL_INTERVAL_MS = 2000;
 const MAX_CONSECUTIVE_POLL_ERRORS = 10;
@@ -206,7 +207,7 @@ async function runQueue(
       // 组件已卸载导致的取消不算失败，状态恢复交给下次加载时的历史恢复逻辑
       return;
     }
-    const message = error instanceof Error ? error.message : "生成图片失败";
+    const message = actionError(error, "生成图片失败");
     await useImageConversationsStore.getState().updateConversation(conversationId, (conversation) => {
       return {
         ...conversation,

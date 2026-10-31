@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { readFileAsText, splitTokens } from "@/lib/account-import-parse";
+import { actionError } from "@/lib/action-result";
 
 type TokenPanelProps = {
   value: string;
@@ -40,7 +41,7 @@ export function TokenPanel({ value, onChange, isSubmitting, onBack }: TokenPanel
       onChange([...splitTokens(value), ...tokens].join("\n"));
       toast.success(`已从 ${file.name} 读取 ${tokens.length} 个 Token`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "读取 TXT 文件失败";
+      const message = actionError(error, "读取 TXT 文件失败");
       toast.error(message);
     }
   };

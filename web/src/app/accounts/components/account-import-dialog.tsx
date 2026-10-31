@@ -31,6 +31,7 @@ import {
   type OAuthLoginStartResponse,
 } from "@/lib/api/accounts";
 import { cn } from "@/lib/utils";
+import { actionError } from "@/lib/action-result";
 
 type ImportMethod = "menu" | "token" | "session" | "codex-auth" | "account-json" | "oauth";
 
@@ -154,7 +155,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
         );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "导入账户失败";
+      const message = actionError(error, "导入账户失败");
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -177,7 +178,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
       }
       toast.success("已打开 OpenAI 授权页面，请在登录后复制 callback URL 回来");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "OAuth 起始失败";
+      const message = actionError(error, "OAuth 起始失败");
       toast.error(message);
     } finally {
       setOauthStarting(false);
@@ -214,7 +215,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
         );
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : "OAuth 换 token 失败";
+      const message = actionError(error, "OAuth 换 token 失败");
       toast.error(message);
     } finally {
       setIsSubmitting(false);
@@ -250,7 +251,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
 
       await submitTokens([token], "Session JSON 导入完成");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Session JSON 解析失败";
+      const message = actionError(error, "Session JSON 解析失败");
       toast.error(message);
     }
   };
@@ -272,7 +273,7 @@ export function AccountImportDialog({ disabled, onImported }: AccountImportDialo
 
       await submitTokens([account.access_token], "Codex 认证 JSON 导入完成", [account]);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "Codex 认证 JSON 解析失败";
+      const message = actionError(error, "Codex 认证 JSON 解析失败");
       toast.error(message);
     }
   };

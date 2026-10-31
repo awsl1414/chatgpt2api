@@ -17,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { testProxy } from "@/lib/api/settings";
 import type { Account, AccountStatus } from "@/lib/api/accounts";
+import { actionError } from "@/lib/action-result";
 
 type AccountEditDialogProps = {
   /** 当前编辑的账号；由父组件以 key=access_token 挂载，保证每次打开都从 props 初始化 */
@@ -47,7 +48,7 @@ export function AccountEditDialog({ account, isUpdating, onClose, onSubmit }: Ac
         toast.error(`代理不可用：${data.result.error ?? "未知错误"}`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "测试代理失败");
+      toast.error(actionError(error, "测试代理失败"));
     } finally {
       setIsTestingProxy(false);
     }

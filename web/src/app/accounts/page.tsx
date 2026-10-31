@@ -32,6 +32,7 @@ import {
 } from "@/lib/api/accounts";
 import { fetchModels, type Model } from "@/lib/api/models";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { actionError } from "@/lib/action-result";
 
 // 导出全部 Token：纯 DOM 下载行为，不参与渲染
 function downloadTokens(accounts: Account[]) {
@@ -78,7 +79,7 @@ function AccountsPageContent() {
       setAccounts(data.items);
       setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
     } catch (error) {
-      const message = error instanceof Error ? error.message : "加载账户失败";
+      const message = actionError(error, "加载账户失败");
       toast.error(message);
     } finally {
       if (!silent) {
@@ -93,7 +94,7 @@ function AccountsPageContent() {
       const data = await fetchModels();
       setAvailableModels(Array.isArray(data.data) ? data.data : []);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "加载模型列表失败";
+      const message = actionError(error, "加载模型列表失败");
       toast.error(message);
     } finally {
       setIsLoadingModels(false);
@@ -163,7 +164,7 @@ function AccountsPageContent() {
       setSelectedIds((prev) => prev.filter((id) => data.items.some((item) => item.access_token === id)));
       toast.success(`删除 ${data.removed ?? 0} 个账户`);
     } catch (error) {
-      const message = error instanceof Error ? error.message : "删除账户失败";
+      const message = actionError(error, "删除账户失败");
       toast.error(message);
     } finally {
       setIsDeleting(false);
@@ -193,7 +194,7 @@ function AccountsPageContent() {
           },
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "刷新账户失败";
+        const message = actionError(error, "刷新账户失败");
         toast.error(message);
       } finally {
         setRefreshingTokens((prev) => {
@@ -277,7 +278,7 @@ function AccountsPageContent() {
     } catch (error) {
       setProgress(initialProgressState);
       setRefreshSummary(null);
-      const message = error instanceof Error ? error.message : "刷新账户失败";
+      const message = actionError(error, "刷新账户失败");
       toast.error(message);
     } finally {
       setIsRefreshing(false);
@@ -382,7 +383,7 @@ function AccountsPageContent() {
     } catch (error) {
       setProgress(initialProgressState);
       setRefreshSummary(null);
-      const message = error instanceof Error ? error.message : "重新登录失败";
+      const message = actionError(error, "重新登录失败");
       toast.error(message);
     } finally {
       setIsRelogining(false);
@@ -405,7 +406,7 @@ function AccountsPageContent() {
       setEditingAccount(null);
       toast.success("账号信息已更新");
     } catch (error) {
-      const message = error instanceof Error ? error.message : "更新账号失败";
+      const message = actionError(error, "更新账号失败");
       toast.error(message);
     } finally {
       setIsUpdating(false);

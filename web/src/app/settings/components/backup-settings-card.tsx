@@ -231,7 +231,7 @@ export function BackupSettingsCard() {
       setDetail(data.item);
     } catch (error) {
       setDetail(null);
-      toast.error(error instanceof Error ? error.message : "读取备份详情失败");
+      toast.error(actionError(error, "读取备份详情失败"));
     } finally {
       setDetailLoading(false);
     }
@@ -271,7 +271,7 @@ export function BackupSettingsCard() {
       window.URL.revokeObjectURL(url);
       toast.success("备份下载已开始");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "下载备份失败");
+      toast.error(actionError(error, "下载备份失败"));
     }
   };
 
