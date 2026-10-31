@@ -27,6 +27,9 @@ dev = [
 [tool.pytest.ini_options]
 # 仅收集 test/ 包；scripts/ 下的手动验证脚本不作为 pytest 用例
 testpaths = ["test"]
+# 测试风格约定：新增用例统一 pytest 函数风格（def test_xxx + assert）；
+# 既有 unittest.TestCase 不强制迁移，可被 pytest 正常收集运行
+
 
 [[tool.uv.index]]
 url = "https://mirrors.aliyun.com/pypi/simple"
