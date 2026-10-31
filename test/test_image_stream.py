@@ -24,7 +24,13 @@ import base64
 import pytest
 
 import services.protocol.image_stream as image_stream_module
-from services.errors import ImageContentPolicyError, ImageGenerationError
+from services.errors import (
+    CodexSourceAccountError,
+    ImageContentPolicyError,
+    ImageGenerationError,
+    public_image_error_message,
+)
+from services.backend.codex_image import iter_codex_image_response_events
 from services.protocol.image_stream import (
     ImageOutput,
     _codex_response_images,
@@ -345,6 +351,26 @@ def test_stream_codex_image_outputs_raises_without_images():
 
     with pytest.raises(ImageGenerationError, match="No image result"):
         list(stream_codex_image_outputs(EmptyBackend(), make_request(model="codex-gpt-image-2")))
+
+
+def test_codex_stream_rejects_web_source_account():
+    """web 账号请求 codex 生图应抛 CodexSourceAccountError（R1-1：补 import 前为 NameError）。"""
+    class WebAccountBackend:
+        access_token = "test-token"
+        account = {"source_type": "web"}
+
+    with pytest.raises(
+        CodexSourceAccountError,
+        match="codex responses endpoint requires a codex source account",
+    ):
+        list(iter_codex_image_response_events(WebAccountBackend(), prompt="画一张图"))
+
+
+def test_codex_source_account_error_message_passes_public_filter():
+    """CodexSourceAccountError 文案经 public_image_error_message 清洗后原样对外（502 兼容）。"""
+    exc = CodexSourceAccountError("codex responses endpoint requires a codex source account")
+    assert exc.status_code == 502
+    assert public_image_error_message(str(exc)) == "codex responses endpoint requires a codex source account"
 
 
 def test_save_image_bytes_requires_injected_saver():

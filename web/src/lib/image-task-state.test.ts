@@ -208,13 +208,11 @@ describe("buildRetryImageConversation", () => {
     expect(buildRetryImageConversation(conversation, "missing-turn", "img-1")).toBeNull();
   });
 
-  it("目标图片不存在时仍会返回会话（变更以轮次命中为准，疑似行为问题，见报告）", () => {
-    // 源码的 changed 标记只判定「轮次命中」，不校验目标图片是否真的被替换：
-    // 图片 id 不存在时图片保持原状，但轮次仍被置回 queued
+  it("目标图片不存在时返回 null，不改动会话（R1-2：changed 守卫须以图片实际替换为准）", () => {
+    // 图片 id 匹配不到（双击重试后旧 id 已被替换、跨 tab 竞态同步）时
+    // 不应返回非 null 会话，避免 handleRetryImage 误写 store 并重复提交任务
     const conversation = makeConversation([makeTurn()]);
-    const result = buildRetryImageConversation(conversation, "turn-1", "missing-img");
-    expect(result).not.toBeNull();
-    expect(result!.turns[0].images[0].id).toBe("turn-1-0");
+    expect(buildRetryImageConversation(conversation, "turn-1", "missing-img")).toBeNull();
   });
 });
 

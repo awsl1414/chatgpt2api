@@ -14,6 +14,7 @@ from collections.abc import Iterator
 from typing import Any
 
 from services.backend.context import BackendClient
+from services.errors import CodexSourceAccountError
 from utils.helper import UpstreamHTTPError
 from utils.jwt import decode_jwt_payload
 from utils.log import logger

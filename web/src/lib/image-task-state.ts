@@ -168,16 +168,24 @@ export function buildRetryImageConversation(
       return turn;
     }
 
+    // 仅当目标图片确实存在时才重置轮次；重复重试（旧 id 已被替换）或
+    // 跨 tab 同步竞态下图片 id 匹配不到时保持原状，由外层返回 null 跳过
     const retryImageId = `${turnId}-${createId()}`;
-    const images = turn.images.map((image) =>
-      image.id === imageId
-        ? {
-            id: retryImageId,
-            taskId: retryImageId,
-            status: "loading" as const,
-          }
-        : image,
-    );
+    let replaced = false;
+    const images = turn.images.map((image) => {
+      if (image.id !== imageId) {
+        return image;
+      }
+      replaced = true;
+      return {
+        id: retryImageId,
+        taskId: retryImageId,
+        status: "loading" as const,
+      };
+    });
+    if (!replaced) {
+      return turn;
+    }
     changed = true;
     const derived = deriveTurnStatus({ ...turn, status: "queued", images });
     return {
