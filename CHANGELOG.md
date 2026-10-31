@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [新增] 新增部署开关 `allow_remote_image_fetch`（默认开启，行为不变）：控制服务端是否拉取用户请求中的远程 `image_url`（http/https）；面向公网部署时建议设为 `false` 以收敛 SSRF 暴露面，关闭后仅接受 base64/data 形式的图片输入。
++ [重构] 账号池生图额度耗尽改抛领域异常 `QuotaExhaustedError`（`services/errors.py`），替换 `services/account/pool.py` 的 `RuntimeError` 并消除 `log_service` 的消息子串匹配；对外 429 `insufficient_quota` 错误响应格式不变。
 + [破坏性变更] 移除旧版全局代理：`config.json` 的 `proxy` 键不再生效，设置页全局代理输入框已删除，代理请改用「稳定代理运行时」（`proxy_runtime`）或账号级代理。优先级为 账号代理 > 稳定代理运行时（仅上游请求）> 显式代理 > 直连。
 + [重构] 后端大文件拆分：`services/openai_backend_api.py` 拆为 `services/backend/` 包（client / image_task / codex_image / search / editable_file / conversation_payload），`services/account_service.py` 拆为 `services/account/` 包（pool / token_refresh / password_login / progress / models），`services/protocol/conversation.py` 拆出 `message_utils`、`event_parse`、`image_stream` 等模块；异常体系统一到 `services/errors.py`，backend 与 account 的循环依赖改为构造注入解除。
 + [重构] 前端三大拆分：图片页 `page.tsx` 拆出 `lib/image-task-state`、`lib/image-task-poller` 等纯逻辑模块与 hooks，账号页拆出组件与轮询 hook，设置页 `store.ts` 按域拆分，CPA 与 `sub2api` 导入界面统一为 connection-manager 公共组件。

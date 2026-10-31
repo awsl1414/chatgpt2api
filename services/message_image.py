@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 
 from curl_cffi import requests
 
+from services.config import config
 from services.errors import InvalidRequestError
 from services.proxy_service import proxy_settings
 
@@ -71,6 +72,12 @@ def _decode_message_image_url(value: object) -> tuple[bytes, str] | None:
     parsed = urlparse(source)
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         return None
+
+    # SSRF 部署开关：面向公网部署时可关闭远程拉取，仅保留 data:/base64 图片输入
+    if not config.allow_remote_image_fetch:
+        raise InvalidRequestError(
+            "remote image fetching is disabled by server configuration (allow_remote_image_fetch)"
+        )
 
     try:
         response = requests.get(

@@ -490,6 +490,18 @@ class ConfigStore:
         return bool(value)
 
     @property
+    def allow_remote_image_fetch(self) -> bool:
+        """是否允许服务端拉取用户请求中的远程 image_url（http/https）。
+
+        用途：自部署内网图源（如 http://192.168.x.x/pic.jpg）依赖此能力，
+        默认 true 与历史行为一致。
+        风险：开启后服务端会向请求指定的任意 URL 发起 GET（SSRF 暴露面，
+        可能被用于探测内网）；面向公网开放的服务建议设为 false，
+        仅接受 data:/base64 形式的图片输入。
+        """
+        return _normalize_bool(self.data.get("allow_remote_image_fetch"), True)
+
+    @property
     def log_levels(self) -> list[str]:
         levels = self.data.get("log_levels")
         if not isinstance(levels, list):
@@ -576,6 +588,7 @@ class ConfigStore:
         data["auto_remove_invalid_accounts"] = self.auto_remove_invalid_accounts
         data["auto_remove_rate_limited_accounts"] = self.auto_remove_rate_limited_accounts
         data["auto_relogin_after_refresh"] = self.auto_relogin_after_refresh
+        data["allow_remote_image_fetch"] = self.allow_remote_image_fetch
         data["log_levels"] = self.log_levels
         data["sensitive_words"] = self.sensitive_words
         data["ai_review"] = self.ai_review

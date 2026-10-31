@@ -133,6 +133,7 @@ environment:
 
 - 兼容 `POST /v1/images/generations` 图片生成接口
 - 兼容 `POST /v1/images/edits` 图片编辑接口
+- 图片输入默认支持远程 `image_url` 拉取；面向公网部署时可在 `config.json` 设 `"allow_remote_image_fetch": false` 关闭（收敛 SSRF 暴露面），关闭后仅接受 base64/data 形式图片输入
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
 - 兼容 Anthropic Messages 协议 `POST /v1/messages`
