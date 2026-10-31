@@ -1,3 +1,4 @@
+"""图片标签持久化：按图片相对路径维护标签集合，损坏文件拒绝静默重置。"""
 from __future__ import annotations
 
 import json

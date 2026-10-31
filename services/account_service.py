@@ -285,6 +285,10 @@ class AccountService:
     def build_export_items(self, access_tokens: list[str] | None = None) -> list[dict[str, str]]:
         return self._pool.build_export_items(access_tokens)
 
+    def build_export_zip(self, access_tokens: list[str] | None = None) -> tuple[bytes, str]:
+        """打包可导出账号为 zip（见 AccountPool.build_export_zip）。"""
+        return self._pool.build_export_zip(access_tokens)
+
     def get_stats(self) -> dict:
         return self._pool.get_stats()
 

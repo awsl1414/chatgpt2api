@@ -1,3 +1,8 @@
+"""对外 OpenAI/Anthropic 兼容层路由（/v1/*）。
+
+本文件只做请求模型定义、鉴权与调用日志（LoggedCall），payload 组装与上游
+交互在各 protocol 模块；错误形态保持对 AI 客户端兼容，不做激进重构。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Request

@@ -1,10 +1,14 @@
+"""结构化调用日志服务：请求/账号双类型日志的写入、查询、删除与旧数据兼容。
+
+日志条目经脱敏（filter_or_log 敏感词过滤 + token 匿名化）后落 jsonl。
+"""
 from __future__ import annotations
 
 import hashlib
 import json
 import itertools
 import time
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -227,7 +231,7 @@ class LoggedCall:
     request_text: str = ""
     request_shape: dict[str, int] | None = None
 
-    async def run(self, handler, *args, sse: str = "openai"):
+    async def run(self, handler: Callable[..., Any], *args: Any, sse: str = "openai") -> Any:
         try:
             result = await run_in_threadpool(handler, *args)
         except ImageGenerationError as exc:

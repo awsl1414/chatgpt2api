@@ -1,3 +1,4 @@
+"""OpenAI/Anthropic 兼容错误响应构造：api/errors.py 与协议层共用的错误形态出口。"""
 from __future__ import annotations
 
 from typing import Any

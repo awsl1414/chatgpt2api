@@ -1,3 +1,4 @@
+"""Chat Completions 协议端点（/v1/chat/completions）：消息转换、上游对话与流式/非流式响应。"""
 from __future__ import annotations
 
 import time
@@ -96,7 +97,7 @@ def completion_response(
 
 
 def stream_text_chat_completion(
-    backend,
+    backend: OpenAIBackendAPI,
     messages: list[dict[str, Any]],
     model: str,
     thinking_effort: str = "",

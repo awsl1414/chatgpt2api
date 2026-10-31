@@ -1,3 +1,4 @@
+"""OpenAI OAuth PKCE 工具：authorize URL 构造、code 交换与 JWT 解析。"""
 auth_base = "https://auth.openai.com"
 platform_base = "https://platform.openai.com"
 platform_oauth_client_id = "app_2SKx67EdpoN0G6j64rFvigXD"

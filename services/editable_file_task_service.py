@@ -1,3 +1,7 @@
+"""PPT/PSD 可编辑文件导出任务服务：任务提交、后台执行、状态查询与产物下载。
+
+任务状态持久化到本地 JSON；产物文件经 public_file_path 输出（带目录穿越防护）。
+"""
 from __future__ import annotations
 
 import json

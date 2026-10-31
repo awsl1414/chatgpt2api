@@ -1,3 +1,4 @@
+"""模型列表端点（/v1/models）：对外模型目录输出。"""
 from __future__ import annotations
 
 from typing import Any

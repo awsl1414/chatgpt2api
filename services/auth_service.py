@@ -1,3 +1,7 @@
+"""API 密钥认证服务：admin/user 双角色密钥的创建、校验与持久化。
+
+密钥仅存 SHA-256 哈希（原文只在创建响应中返回一次），比较全程常量时间。
+"""
 from __future__ import annotations
 
 import hashlib

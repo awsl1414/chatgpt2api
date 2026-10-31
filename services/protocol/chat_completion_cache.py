@@ -1,3 +1,4 @@
+"""会话补全缓存：按请求指纹缓存上游响应，支持流式缓存与在途请求去重。"""
 from __future__ import annotations
 
 import copy

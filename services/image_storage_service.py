@@ -1,3 +1,7 @@
+"""图片存储门面：本地磁盘与 WebDAV 的读写、双写同步与元数据索引。
+
+mode 支持 local/webdav/both；远端读取失败时回退本地。
+"""
 from __future__ import annotations
 
 import hashlib

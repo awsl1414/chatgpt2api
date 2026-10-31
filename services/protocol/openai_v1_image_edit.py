@@ -1,3 +1,4 @@
+"""图片编辑端点（/v1/images/edits）：多图输入编排与生成结果组装。"""
 from __future__ import annotations
 
 from io import BytesIO

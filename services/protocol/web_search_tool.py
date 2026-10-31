@@ -1,3 +1,4 @@
+"""上游网页搜索工具封装：搜索请求构造与结果解析（供对话内工具调用复用）。"""
 from __future__ import annotations
 
 import re

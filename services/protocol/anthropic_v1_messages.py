@@ -1,3 +1,4 @@
+"""Anthropic Messages 协议端点（/v1/messages）：请求转换、SSE 事件映射与响应适配。"""
 from __future__ import annotations
 
 import html

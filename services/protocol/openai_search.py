@@ -1,3 +1,4 @@
+"""网页搜索端点（/v1/search）：基于上游搜索工具的检索与结果组装。"""
 from __future__ import annotations
 
 from services.account_service import account_service

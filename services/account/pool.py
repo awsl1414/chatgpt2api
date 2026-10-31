@@ -15,6 +15,10 @@ token 轮换通过别名表保持旧 token 可解析。
 """
 from __future__ import annotations
 
+import io
+import json
+import re
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from threading import Condition, Lock
@@ -49,6 +53,12 @@ from utils.jwt import decode_jwt_payload
 VerifyCallback = Callable[..., dict | None]
 # 文本候选刷新回调：refresh_access_token(token, event) -> token
 RefreshCallback = Callable[..., str]
+
+
+def _safe_export_name(value: str, fallback: str) -> str:
+    """导出文件名安全化：仅保留字母数字与 ._-，超长截断，空值回退 fallback。"""
+    clean = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
+    return (clean or fallback)[:80]
 
 
 class AccountPool:
@@ -704,6 +714,33 @@ class AccountPool:
                 item["password"] = password
             items.append(item)
         return items
+
+    def build_export_zip(self, access_tokens: list[str] | None = None) -> tuple[bytes, str]:
+        """把可导出账号打包为 zip（每账号一个 JSON 文件），供管理面下载。
+
+        返回 (zip 字节流, 下载文件名时间戳)；文件名取 email/account_id 并做
+        安全化清洗，重名追加序号。zip 构造属导出业务逻辑，收敛在 service
+        层（审计 B-中2），api 层只负责 Response 封装。
+        """
+        items = self.build_export_items(access_tokens)
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        buf = io.BytesIO()
+        used_names: set[str] = set()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:
+            for index, item in enumerate(items, start=1):
+                raw_name = item.get("email") or item.get("account_id") or f"account-{index:03d}"
+                base_name = _safe_export_name(str(raw_name), f"account-{index:03d}")
+                name = base_name
+                suffix = 2
+                while name in used_names:
+                    name = f"{base_name}-{suffix}"
+                    suffix += 1
+                used_names.add(name)
+                archive.writestr(
+                    f"{name}.json",
+                    json.dumps(item, ensure_ascii=False, indent=2) + "\n",
+                )
+        return buf.getvalue(), timestamp
 
     def get_stats(self) -> dict:
         with self._lock:

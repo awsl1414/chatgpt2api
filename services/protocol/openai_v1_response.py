@@ -1,3 +1,4 @@
+"""Responses 协议端点（/v1/responses）：input 解析、工具调用与流式事件适配。"""
 from __future__ import annotations
 
 import time

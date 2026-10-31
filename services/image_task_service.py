@@ -1,3 +1,8 @@
+"""生图任务生命周期管理：提交去重、后台线程执行、状态持久化、超时恢复与保留期清理。
+
+任务按 (owner_id, client_task_id) 幂等；服务重启时未完成任务标记中断，
+可凭 conversation_id 经 resume-poll 恢复轮询。
+"""
 from __future__ import annotations
 
 import json

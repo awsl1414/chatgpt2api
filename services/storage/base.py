@@ -1,3 +1,4 @@
+"""存储后端抽象：StorageBackend 协议定义（加载/保存/健康检查/后端信息）。"""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

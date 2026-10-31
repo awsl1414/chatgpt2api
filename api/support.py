@@ -1,3 +1,8 @@
+"""路由层公共支撑：鉴权（require_admin/require_identity）、响应脱敏、
+图片 base_url 解析、静态资源解析与限流账号巡检线程。
+
+部署主密钥直接映射 admin 身份属对外 API 兼容例外（审计 §7 决策项 3）。
+"""
 from __future__ import annotations
 
 import secrets

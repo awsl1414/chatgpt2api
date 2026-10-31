@@ -1,3 +1,7 @@
+"""Cloudflare R2 备份服务：定时打包配置/账号/日志等快照上传，支持 AES-256-CBC 加密与轮转清理。
+
+openssl 子进程参数为列表形态，passphrase 经环境变量传递、不进命令行。
+"""
 from __future__ import annotations
 
 import hashlib

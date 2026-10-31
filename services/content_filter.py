@@ -1,3 +1,7 @@
+"""请求内容风控：敏感词本地过滤与可选的第三方 AI 审核。
+
+命中时抛领域异常由 api 层统一映射，不再在 service 层直接构造 HTTP 响应。
+"""
 from __future__ import annotations
 
 import re

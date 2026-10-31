@@ -1,3 +1,8 @@
+"""全局异常处理器：领域异常与 HTTPException 的统一错误响应。
+
+/v1/* 路径按来源返回 OpenAI/Anthropic 兼容错误格式，其余路径返回
+{"detail": ...}；迁移前后错误响应字节级兼容。
+"""
 from __future__ import annotations
 
 from fastapi import FastAPI, Request

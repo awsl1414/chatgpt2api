@@ -1,3 +1,7 @@
+"""生图任务管理面路由：任务创建（文生图/图生图）、列表查询与超时恢复。
+
+任务实际执行在 services/image_task_service；本层只做鉴权、敏感词过滤与参数校验。
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, Header, HTTPException, Query, Request

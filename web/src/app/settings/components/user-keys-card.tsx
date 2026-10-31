@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import { Ban, CheckCircle2, Copy, KeyRound, LoaderCircle, Pencil, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createUserKey, deleteUserKey, fetchUserKeys, updateUserKey, type UserKey } from "@/lib/api/auth-keys";
+import { useInitialLoad } from "@/hooks/use-initial-load";
 
 function formatDateTime(value?: string | null) {
   if (!value) {
@@ -37,7 +38,6 @@ function formatDateTime(value?: string | null) {
 }
 
 export function UserKeysCard() {
-  const didLoadRef = useRef(false);
   const [items, setItems] = useState<UserKey[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
@@ -62,13 +62,7 @@ export function UserKeysCard() {
     }
   };
 
-  useEffect(() => {
-    if (didLoadRef.current) {
-      return;
-    }
-    didLoadRef.current = true;
-    void load();
-  }, []);
+  useInitialLoad(() => void load());
 
   const handleCreate = async () => {
     setIsCreating(true);

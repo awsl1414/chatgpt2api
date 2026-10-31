@@ -1,3 +1,4 @@
+"""Git 存储后端：以裸仓库提交方式持久化快照（curl-cffi 会话纪律与日志脱敏沿用全局约定）。"""
 from __future__ import annotations
 
 import json

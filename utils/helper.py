@@ -12,7 +12,7 @@ import re
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterable, Iterator
 from urllib.parse import urlparse
 
 from curl_cffi import requests
@@ -139,7 +139,7 @@ def ensure_ok(response: requests.Response, context: str) -> None:
     raise UpstreamHTTPError(context, response.status_code, body, retry_after=retry_after)
 
 
-def sse_json_stream(items) -> Iterator[str]:
+def sse_json_stream(items: Iterable[dict[str, Any]]) -> Iterator[str]:
     yield ": stream-open\n\n"
     try:
         for item in items:
@@ -157,7 +157,7 @@ def sse_json_stream(items) -> Iterator[str]:
     yield "data: [DONE]\n\n"
 
 
-def anthropic_sse_stream(items) -> Iterator[str]:
+def anthropic_sse_stream(items: Iterable[dict[str, Any]]) -> Iterator[str]:
     try:
         for item in items:
             event = str(item.get("type") or "message_delta") if isinstance(item, dict) else "message_delta"

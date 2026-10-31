@@ -1,3 +1,7 @@
+"""图片管理域服务：列表/删除/压缩/下载打包/缩略图/存储统计与定时清理。
+
+对外暴露的相对路径统一经 _safe_relative_path + resolve 校验，防目录穿越。
+"""
 from __future__ import annotations
 
 import io

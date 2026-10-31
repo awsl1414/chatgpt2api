@@ -1,3 +1,4 @@
+"""存储后端工厂：按配置创建 json/database/git 后端实例，连接串脱敏后记日志。"""
 from __future__ import annotations
 
 import os

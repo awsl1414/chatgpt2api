@@ -1,3 +1,4 @@
+"""文生图端点（/v1/images/generations）：prompt 组装、尺寸/质量参数门控与结果输出。"""
 from __future__ import annotations
 
 from typing import Any, Iterator

@@ -1,3 +1,7 @@
+"""系统管理路由：设置读写、图片管理、日志、备份、代理与健康监控。
+
+阻塞 IO（磁盘/远端）统一经 run_in_threadpool 下放线程池。
+"""
 from __future__ import annotations
 
 from urllib.parse import quote

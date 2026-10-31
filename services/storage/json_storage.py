@@ -1,3 +1,7 @@
+"""JSON 文件存储后端：accounts 等数据的本地持久化。
+
+损坏文件拒绝静默重置（审计 B-高4）：加载失败时抛错并拒绝覆盖保存，防全量丢失。
+"""
 from __future__ import annotations
 
 import json

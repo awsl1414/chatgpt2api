@@ -1,3 +1,4 @@
+"""数据库存储后端（SQLAlchemy）：StorageBackend 的关系库实现。"""
 from __future__ import annotations
 
 import json

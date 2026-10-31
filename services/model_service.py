@@ -1,3 +1,4 @@
+"""模型目录服务：上游模型列表缓存与文本/图片模型的路由解析。"""
 from __future__ import annotations
 
 import time

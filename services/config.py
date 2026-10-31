@@ -1,3 +1,7 @@
+"""配置中心：config.json 的读写、字段归一化与派生设置（备份/图片存储/代理运行时等）。
+
+update() 入口统一做 normalize + 校验；legacy 全局代理链已按审计决策删除。
+"""
 from __future__ import annotations
 
 import copy
