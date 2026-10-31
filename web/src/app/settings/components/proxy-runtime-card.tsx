@@ -20,7 +20,7 @@ import {
 } from "@/lib/api/settings";
 import { actionError, toastActionResult } from "@/lib/action-result";
 
-import { useConfigStore } from "../store/config";
+import { useConfigStore } from "@/store/config";
 
 export function ProxyRuntimeCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);

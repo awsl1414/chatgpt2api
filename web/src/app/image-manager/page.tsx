@@ -15,9 +15,9 @@ import { AuthGuard } from "@/components/auth-guard";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
-import { useImageStorage } from "@/hooks/use-image-storage";
-import { useImageTags } from "@/hooks/use-image-tags";
-import { useManagedImages } from "@/hooks/use-managed-images";
+import { useImageStorage } from "@/app/image-manager/hooks/use-image-storage";
+import { useImageTags } from "@/app/image-manager/hooks/use-image-tags";
+import { useManagedImages } from "@/app/image-manager/hooks/use-managed-images";
 import { usePagination } from "@/hooks/use-pagination";
 import { actionError } from "@/lib/action-result";
 import {

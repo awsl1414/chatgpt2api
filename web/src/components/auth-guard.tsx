@@ -3,7 +3,7 @@
 import type { ReactNode } from "react";
 import { LoaderCircle } from "lucide-react";
 
-import { useAuthGuard } from "@/lib/use-auth-guard";
+import { useAuthGuard } from "@/hooks/use-auth-guard";
 import type { AuthRole } from "@/store/auth";
 
 type AuthGuardProps = {

@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import type { ImageStorageMode } from "@/lib/api/settings";
 import { toastActionResult } from "@/lib/action-result";
 
-import { useConfigStore } from "../store/config";
+import { useConfigStore } from "@/store/config";
 
 export function ConfigCard() {
   const logLevelOptions = ["debug", "info", "warning", "error"];

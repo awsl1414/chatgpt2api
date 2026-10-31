@@ -8,7 +8,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { toastActionResult } from "@/lib/action-result";
 
-import { useConfigStore } from "../store/config";
+import { useConfigStore } from "@/store/config";
 
 export function ThirdPartyAppsCard() {
   const config = useConfigStore((state) => state.config);

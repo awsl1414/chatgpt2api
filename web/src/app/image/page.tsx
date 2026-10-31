@@ -12,9 +12,9 @@ import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { AuthGuard } from "@/components/auth-guard";
 import { Button } from "@/components/ui/button";
-import { usePersistedComposerOptions } from "@/hooks/use-persisted-composer-options";
-import { useReferenceImages } from "@/hooks/use-reference-images";
-import { useScrollRestore } from "@/hooks/use-scroll-restore";
+import { usePersistedComposerOptions } from "@/app/image/hooks/use-persisted-composer-options";
+import { useReferenceImages } from "@/app/image/hooks/use-reference-images";
+import { useScrollRestore } from "@/app/image/hooks/use-scroll-restore";
 import { fetchAccounts } from "@/lib/api/accounts";
 import { resumeImagePoll } from "@/lib/api/image-tasks";
 import { ACTIVE_CONVERSATION_STORAGE_KEY } from "@/lib/image-storage-keys";
@@ -29,7 +29,7 @@ import {
   recoverConversationHistory,
 } from "@/lib/image-task-state";
 import { formatAvailableQuota, parseImageSize, pickFallbackConversationId } from "@/lib/image-utils";
-import { useConfigStore } from "@/app/settings/store/config";
+import { useConfigStore } from "@/store/config";
 import { actionError } from "@/lib/action-result";
 import {
   getImageConversationStats,

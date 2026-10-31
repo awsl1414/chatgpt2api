@@ -25,7 +25,7 @@ import {
 } from "@/lib/api/backups";
 import { actionError, toastActionResult } from "@/lib/action-result";
 import { getStoredAuthKey } from "@/store/auth";
-import { useConfigStore } from "../store/config";
+import { useConfigStore } from "@/store/config";
 
 function formatDateTime(value?: string | null) {
   if (!value) {

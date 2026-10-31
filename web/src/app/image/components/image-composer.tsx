@@ -11,7 +11,7 @@ import { imageModelLabel, isCodexImageModel } from "@/lib/api/models";
 import type { ImageModel } from "@/lib/api/types";
 import { aspectOptions, codexExclusiveTiers } from "@/lib/image-composer-options";
 import { cn } from "@/lib/utils";
-import type { ImageComposerOptions } from "@/hooks/use-persisted-composer-options";
+import type { ImageComposerOptions } from "@/app/image/hooks/use-persisted-composer-options";
 
 type ImageComposerProps = {
   prompt: string;

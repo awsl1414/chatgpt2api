@@ -18,7 +18,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { usePagination } from "@/hooks/use-pagination";
-import { useProgressPolling } from "@/hooks/use-progress-polling";
+import { useProgressPolling } from "@/app/accounts/hooks/use-progress-polling";
 import { formatCompact, formatQuotaSummary } from "@/lib/account-format";
 import {
   deleteAccounts,

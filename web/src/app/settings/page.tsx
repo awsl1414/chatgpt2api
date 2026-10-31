@@ -16,7 +16,7 @@ import { ProxyRuntimeCard } from "./components/proxy-runtime-card";
 import { SettingsHeader } from "./components/settings-header";
 import { ThirdPartyAppsCard } from "./components/third-party-apps-card";
 import { UserKeysCard } from "./components/user-keys-card";
-import { useConfigStore } from "./store/config";
+import { useConfigStore } from "@/store/config";
 
 const settingsTabs = [
   { value: "basic", title: "基础配置" },

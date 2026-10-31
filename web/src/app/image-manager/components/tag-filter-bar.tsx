@@ -3,7 +3,7 @@
 import { Tag, X } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
-import { useLongPress } from "@/hooks/use-long-press";
+import { useLongPress } from "@/app/image-manager/hooks/use-long-press";
 
 const LONG_PRESS_MS = 800;
 
