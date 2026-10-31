@@ -54,6 +54,9 @@ type TouchGesture =
 const minScale = 1;
 const maxScale = 4;
 
+/** 未缩放、未平移的初始变换 */
+const defaultTransform: ImageTransform = { scale: 1, x: 0, y: 0 };
+
 function clamp(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }
@@ -98,11 +101,25 @@ export function ImageLightbox({
   const lastTapRef = useRef(0);
   const pendingTransformRef = useRef<ImageTransform | null>(null);
   const rafRef = useRef<number | null>(null);
-  const [transform, setTransform] = useState<ImageTransform>({ scale: 1, x: 0, y: 0 });
-  const [isGesturing, setIsGesturing] = useState(false);
   const current = images[currentIndex];
   const hasPrev = currentIndex > 0;
   const hasNext = currentIndex < images.length - 1;
+
+  // 打开态或当前图片变化后，旧的缩放/平移状态自动失效。
+  // 状态里带上 key，渲染时比对即可得到重置效果，无需在 effect 中 setState。
+  const transformKey = `${open ? "open" : "closed"}:${current?.id ?? ""}`;
+  const [transformState, setTransformState] = useState<{ key: string; value: ImageTransform }>({
+    key: transformKey,
+    value: defaultTransform,
+  });
+  const transform = transformState.key === transformKey ? transformState.value : defaultTransform;
+
+  const commitTransform = useCallback(
+    (next: ImageTransform) => {
+      setTransformState({ key: transformKey, value: next });
+    },
+    [transformKey],
+  );
 
   const cancelScheduledTransform = useCallback(() => {
     if (rafRef.current != null) {
@@ -112,18 +129,21 @@ export function ImageLightbox({
     pendingTransformRef.current = null;
   }, []);
 
-  const scheduleTransform = useCallback((next: ImageTransform) => {
-    pendingTransformRef.current = next;
-    if (rafRef.current != null) return;
-    rafRef.current = requestAnimationFrame(() => {
-      rafRef.current = null;
-      const pending = pendingTransformRef.current;
-      pendingTransformRef.current = null;
-      if (pending) {
-        setTransform(pending);
-      }
-    });
-  }, []);
+  const scheduleTransform = useCallback(
+    (next: ImageTransform) => {
+      pendingTransformRef.current = next;
+      if (rafRef.current != null) return;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = null;
+        const pending = pendingTransformRef.current;
+        pendingTransformRef.current = null;
+        if (pending) {
+          commitTransform(pending);
+        }
+      });
+    },
+    [commitTransform],
+  );
 
   const flushScheduledTransform = useCallback(() => {
     if (rafRef.current != null) {
@@ -133,16 +153,9 @@ export function ImageLightbox({
     const pending = pendingTransformRef.current;
     pendingTransformRef.current = null;
     if (pending) {
-      setTransform(pending);
+      commitTransform(pending);
     }
-  }, []);
-
-  const resetTransform = useCallback(() => {
-    cancelScheduledTransform();
-    setTransform({ scale: 1, x: 0, y: 0 });
-    setIsGesturing(false);
-    gestureRef.current = null;
-  }, [cancelScheduledTransform]);
+  }, [commitTransform]);
 
   const goPrev = useCallback(() => {
     if (hasPrev) onIndexChange(currentIndex - 1);
@@ -152,10 +165,21 @@ export function ImageLightbox({
     if (hasNext) onIndexChange(currentIndex + 1);
   }, [hasNext, currentIndex, onIndexChange]);
 
-  useEffect(() => {
-    resetTransform();
-  }, [current?.id, open, resetTransform]);
+  // 手势状态同样带上 key：打开态或图片切换后，旧的「手势中」标记自动失效
+  const [gestureState, setGestureState] = useState<{ key: string; active: boolean }>({
+    key: transformKey,
+    active: false,
+  });
+  const isGesturing = gestureState.key === transformKey && gestureState.active;
 
+  const setGesturing = useCallback(
+    (active: boolean) => {
+      setGestureState({ key: transformKey, active });
+    },
+    [transformKey],
+  );
+
+  // 卸载时取消未执行的动画帧
   useEffect(() => {
     return () => {
       if (rafRef.current != null) {
@@ -191,10 +215,8 @@ export function ImageLightbox({
   }, [current]);
 
   const toggleZoom = useCallback(() => {
-    setTransform((currentTransform) =>
-      currentTransform.scale > minScale ? { scale: 1, x: 0, y: 0 } : { scale: 2.5, x: 0, y: 0 },
-    );
-  }, []);
+    commitTransform(transform.scale > minScale ? defaultTransform : { scale: 2.5, x: 0, y: 0 });
+  }, [commitTransform, transform.scale]);
 
   const handleTouchStart = useCallback(
     (event: React.TouchEvent<HTMLDivElement>) => {
@@ -207,7 +229,7 @@ export function ImageLightbox({
         }
         const center = getTouchCenter(event.touches);
         cancelScheduledTransform();
-        setIsGesturing(true);
+        setGesturing(true);
         gestureRef.current = {
           type: "pinch",
           startDistance,
@@ -226,7 +248,7 @@ export function ImageLightbox({
       const touch = event.touches[0];
       if (transform.scale > minScale) {
         cancelScheduledTransform();
-        setIsGesturing(true);
+        setGesturing(true);
         gestureRef.current = {
           type: "pan",
           startX: touch.clientX,
@@ -241,7 +263,7 @@ export function ImageLightbox({
         };
       }
     },
-    [transform, cancelScheduledTransform],
+    [transform, cancelScheduledTransform, setGesturing],
   );
 
   const handleTouchMove = useCallback(
@@ -297,7 +319,7 @@ export function ImageLightbox({
   const handleTouchEnd = useCallback(
     (event: React.TouchEvent<HTMLDivElement>) => {
       flushScheduledTransform();
-      setIsGesturing(false);
+      setGesturing(false);
 
       const gesture = gestureRef.current;
       gestureRef.current = null;
@@ -330,14 +352,14 @@ export function ImageLightbox({
         goNext();
       }
     },
-    [goPrev, goNext, toggleZoom, flushScheduledTransform],
+    [goPrev, goNext, toggleZoom, flushScheduledTransform, setGesturing],
   );
 
   const handleTouchCancel = useCallback(() => {
     cancelScheduledTransform();
-    setIsGesturing(false);
+    setGesturing(false);
     gestureRef.current = null;
-  }, [cancelScheduledTransform]);
+  }, [cancelScheduledTransform, setGesturing]);
 
   if (!current) return null;
 

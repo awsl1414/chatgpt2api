@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { Copy, Download } from "lucide-react";
 
 import { copyToClipboard } from "@/lib/clipboard";
@@ -9,15 +9,36 @@ import webConfig from "@/constants/common-env";
 import { fetchSettingsConfig } from "@/lib/api/settings";
 import { getStoredAuthSession } from "@/store/auth";
 
+/** 页面来源在生命周期内不变，无需订阅外部变更 */
+const subscribeNoop = () => () => {};
+
 export function SkillPanel() {
-  const [browserBaseUrl, setBrowserBaseUrl] = useState("");
+  // 读取浏览器专属 API：服务端快照固定为空串，避免在 effect 中同步 setState
+  const browserBaseUrl = useSyncExternalStore(
+    subscribeNoop,
+    () => window.location.origin,
+    () => "",
+  );
   const [configuredBaseUrl, setConfiguredBaseUrl] = useState("");
   const [authKey, setAuthKey] = useState("");
 
   useEffect(() => {
-    setBrowserBaseUrl(window.location.origin);
-    void fetchSettingsConfig().then((data) => setConfiguredBaseUrl(String(data.config.base_url || "").replace(/\/$/, ""))).catch(() => undefined);
-    void getStoredAuthSession().then((session) => setAuthKey(session?.key || ""));
+    let active = true;
+    void fetchSettingsConfig()
+      .then((data) => {
+        if (active) {
+          setConfiguredBaseUrl(String(data.config.base_url || "").replace(/\/$/, ""));
+        }
+      })
+      .catch(() => undefined);
+    void getStoredAuthSession().then((session) => {
+      if (active) {
+        setAuthKey(session?.key || "");
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const apiBaseUrl = configuredBaseUrl || webConfig.apiUrl.replace(/\/$/, "") || browserBaseUrl;

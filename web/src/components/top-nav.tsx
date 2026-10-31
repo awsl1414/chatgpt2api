@@ -42,7 +42,10 @@ export function TopNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [session, setSession] = useState<StoredAuthSession | null | undefined>(undefined);
-  const [thirdPartyApps, setThirdPartyApps] = useState<ThirdPartyAppsSettings | null>(null);
+  const [thirdPartyAppsState, setThirdPartyAppsState] = useState<{
+    session: StoredAuthSession | null;
+    apps: ThirdPartyAppsSettings | null;
+  } | null>(null);
   const [isCanvasDialogOpen, setIsCanvasDialogOpen] = useState(false);
 
   useEffect(() => {
@@ -72,7 +75,6 @@ export function TopNav() {
 
   useEffect(() => {
     if (!session) {
-      setThirdPartyApps(null);
       return;
     }
     let active = true;
@@ -80,11 +82,11 @@ export function TopNav() {
       try {
         const data = await fetchThirdPartyApps();
         if (active) {
-          setThirdPartyApps(data.third_party_apps);
+          setThirdPartyAppsState({ session, apps: data.third_party_apps });
         }
       } catch {
         if (active) {
-          setThirdPartyApps(null);
+          setThirdPartyAppsState({ session, apps: null });
         }
       }
     };
@@ -97,6 +99,10 @@ export function TopNav() {
       window.removeEventListener("third-party-apps-updated", reload);
     };
   }, [session]);
+
+  // 未登录或会话已切换时，旧会话的应用配置自动失效，无需在 effect 中清空
+  const thirdPartyApps =
+    session && thirdPartyAppsState?.session === session ? thirdPartyAppsState.apps : null;
 
   const handleLogout = async () => {
     await clearStoredAuthSession();
