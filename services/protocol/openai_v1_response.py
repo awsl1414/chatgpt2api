@@ -27,6 +27,7 @@ from services.protocol.web_search_tool import (
 )
 from services.message_image import extract_image_from_message_content
 from utils.helper import extract_response_prompt, has_response_image_generation_tool
+from utils.thinking import thinking_effort_from_body
 from utils.image_tokens import (
     count_image_content_tokens,
     count_image_output_items_tokens,
@@ -41,28 +42,6 @@ TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
 )
 
 RESPONSE_CONTENT_PART_TYPES = {"text", "input_text", "output_text", "image_url", "input_image", "image"}
-
-
-def normalize_thinking_effort(value: object) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"", "none"}:
-        return ""
-    if normalized in {"low", "medium", "high"}:
-        return normalized
-    if normalized in {"xhigh", "extended"}:
-        return "extended"
-    return ""
-
-
-def thinking_effort_from_body(body: dict[str, Any]) -> str:
-    reasoning = body.get("reasoning")
-    if isinstance(reasoning, dict):
-        return normalize_thinking_effort(reasoning.get("effort"))
-    if "thinking_effort" in body:
-        return normalize_thinking_effort(body.get("thinking_effort"))
-    if "reasoning_effort" in body:
-        return normalize_thinking_effort(body.get("reasoning_effort"))
-    return ""
 
 
 def is_text_response_request(body: dict[str, Any]) -> bool:

@@ -28,6 +28,7 @@ from services.protocol.web_search_tool import (
 )
 from services.message_image import extract_chat_image, parse_image_count
 from utils.helper import build_chat_image_markdown_content, extract_chat_prompt, is_image_chat_request
+from utils.thinking import thinking_effort_from_body
 from utils.image_tokens import (
     chat_usage_from_image_usage,
     count_image_inputs_tokens,
@@ -40,28 +41,6 @@ TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
     "or file operations. Do not claim to have run tools or inspected external resources. "
     "If a user asks you to use a tool, say that tool execution is unavailable through this backend."
 )
-
-
-def normalize_thinking_effort(value: object) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"", "none"}:
-        return ""
-    if normalized in {"low", "medium", "high"}:
-        return normalized
-    if normalized in {"xhigh", "extended"}:
-        return "extended"
-    return ""
-
-
-def thinking_effort_from_body(body: dict[str, Any]) -> str:
-    if "thinking_effort" in body:
-        return normalize_thinking_effort(body.get("thinking_effort"))
-    if "reasoning_effort" in body:
-        return normalize_thinking_effort(body.get("reasoning_effort"))
-    reasoning = body.get("reasoning")
-    if isinstance(reasoning, dict):
-        return normalize_thinking_effort(reasoning.get("effort"))
-    return ""
 
 
 def completion_chunk(model: str, delta: dict[str, Any], finish_reason: str | None = None, completion_id: str = "", created: int | None = None) -> dict[str, Any]:

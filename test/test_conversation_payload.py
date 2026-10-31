@@ -19,9 +19,9 @@ from services.backend.conversation_payload import (
     api_messages_to_conversation_messages,
     conversation_payload,
     image_model_settings,
-    normalize_thinking_effort,
 )
 from services.config import config
+from utils.thinking import normalize_thinking_effort, thinking_effort_from_body
 
 
 class FakeAPI:
@@ -38,6 +38,7 @@ class FakeAPI:
 
 
 def test_normalize_thinking_effort_value_table():
+    """API 层缺省口径：standard/max 与未知值归 ""，由调用方回退 config 默认。"""
     assert normalize_thinking_effort("") == ""
     assert normalize_thinking_effort(None) == ""
     assert normalize_thinking_effort("auto") == ""
@@ -45,11 +46,37 @@ def test_normalize_thinking_effort_value_table():
     assert normalize_thinking_effort("HIGH") == "high"
     assert normalize_thinking_effort(" low ") == "low"
     assert normalize_thinking_effort("medium") == "medium"
-    assert normalize_thinking_effort("standard") == "standard"
-    assert normalize_thinking_effort("max") == "max"
+    assert normalize_thinking_effort("standard") == ""
+    assert normalize_thinking_effort("max") == ""
     assert normalize_thinking_effort("xhigh") == "extended"
     assert normalize_thinking_effort("extended") == "extended"
     assert normalize_thinking_effort("bogus") == ""
+
+
+def test_normalize_thinking_effort_payload_layer_passthrough():
+    """payload 层（passthrough_standard_max=True，R3-M1 宽口径）放行 standard/max 原样。"""
+    assert normalize_thinking_effort("standard", passthrough_standard_max=True) == "standard"
+    assert normalize_thinking_effort("max", passthrough_standard_max=True) == "max"
+    assert normalize_thinking_effort("auto", passthrough_standard_max=True) == ""
+    assert normalize_thinking_effort("bogus", passthrough_standard_max=True) == ""
+
+
+def test_thinking_effort_from_body_priority_unified():
+    """解析优先级跨端点统一：reasoning.effort > thinking_effort > reasoning_effort（R3-M2）。"""
+    assert thinking_effort_from_body({"reasoning": {"effort": "high"}, "thinking_effort": "low"}) == "high"
+    assert thinking_effort_from_body({"thinking_effort": "low", "reasoning_effort": "high"}) == "low"
+    assert thinking_effort_from_body({"reasoning_effort": "high"}) == "high"
+    assert thinking_effort_from_body({}) == ""
+    assert thinking_effort_from_body({"reasoning": "medium"}) == ""
+
+
+def test_both_protocol_endpoints_share_single_implementation():
+    """chat completions 与 responses 两个端点必须引用同一份实现（防并行拷贝回归）。"""
+    import services.protocol.openai_v1_chat_complete as chat_module
+    import services.protocol.openai_v1_response as response_module
+
+    assert chat_module.thinking_effort_from_body is thinking_effort_from_body
+    assert response_module.thinking_effort_from_body is thinking_effort_from_body
 
 
 def test_string_message_maps_to_text_parts():

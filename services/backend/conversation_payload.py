@@ -12,6 +12,7 @@ from typing import Any
 from services.backend.context import BackendClient
 from services.config import config
 from utils.helper import CODEX_IMAGE_PUBLIC_MODELS, new_uuid, split_image_model
+from utils.thinking import normalize_thinking_effort
 
 
 
@@ -87,16 +88,6 @@ def api_messages_to_conversation_messages(api: BackendClient, messages: list[dic
         })
     return conversation_messages
 
-def normalize_thinking_effort(value: str) -> str:
-    normalized = str(value or "").strip().lower()
-    if normalized in {"", "none", "auto"}:
-        return ""
-    if normalized in {"low", "medium", "high", "standard", "max"}:
-        return normalized
-    if normalized in {"xhigh", "extended"}:
-        return "extended"
-    return ""
-
 def conversation_payload(
         api: BackendClient,
         messages: list[dict[str, Any]],
@@ -135,7 +126,10 @@ def conversation_payload(
             "screen_width": 2560,
         },
     }
-    normalized_effort = normalize_thinking_effort(thinking_effort or config.default_thinking_effort)
+    normalized_effort = normalize_thinking_effort(
+        thinking_effort or config.default_thinking_effort,
+        passthrough_standard_max=True,
+    )
     if normalized_effort:
         payload["thinking_effort"] = normalized_effort
     return payload
@@ -154,4 +148,4 @@ def image_model_settings(model: str) -> tuple[str, str]:
     model_name, separator, suffix = upstream_model.rpartition("-")
     if separator and suffix.lower() in {"standard", "extended", "max"}:
         return model_name, suffix.lower()
-    return upstream_model, normalize_thinking_effort(config.default_thinking_effort)
+    return upstream_model, normalize_thinking_effort(config.default_thinking_effort, passthrough_standard_max=True)
