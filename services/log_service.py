@@ -10,7 +10,7 @@ import itertools
 import time
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
-from datetime import datetime
+from utils.clock import utc_iso_from_epoch, utc_now_iso
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -78,7 +78,7 @@ class LogService:
     def add(self, type: str, summary: str = "", detail: dict[str, Any] | None = None, **data: Any) -> None:
         item = {
             "id": uuid4().hex,
-            "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "time": utc_now_iso(),
             "type": type,
             "summary": summary,
             "detail": detail or data,
@@ -331,8 +331,8 @@ class LoggedCall:
             "role": self.identity.get("role"),
             "endpoint": self.endpoint,
             "model": self.model,
-            "started_at": datetime.fromtimestamp(self.started).strftime("%Y-%m-%d %H:%M:%S"),
-            "ended_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "started_at": utc_iso_from_epoch(self.started),
+            "ended_at": utc_now_iso(),
             "duration_ms": int((time.time() - self.started) * 1000),
             "status": status,
         }

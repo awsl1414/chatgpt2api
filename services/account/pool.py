@@ -387,7 +387,7 @@ class AccountPool:
             if current is None:
                 return
             next_item = dict(current)
-            next_item["last_used_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            next_item["last_used_at"] = now_str()
             account = parse_account(next_item)
             if account is None:
                 return
@@ -471,7 +471,7 @@ class AccountPool:
             if current is None:
                 return None
             next_item = dict(current)
-            next_item["last_used_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            next_item["last_used_at"] = now_str()
             if success:
                 next_item["success"] = int(next_item.get("success") or 0) + 1
                 next_item["quota"] = max(0, int(next_item.get("quota") or 0) - 1)
@@ -723,7 +723,7 @@ class AccountPool:
         层（审计 B-中2），api 层只负责 Response 封装。
         """
         items = self.build_export_items(access_tokens)
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
         buf = io.BytesIO()
         used_names: set[str] = set()
         with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as archive:

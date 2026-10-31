@@ -6,7 +6,7 @@ import json
 import threading
 import time
 import uuid
-from datetime import datetime, timezone
+from utils.clock import utc_now_iso
 from pathlib import Path
 from threading import Lock
 
@@ -30,8 +30,6 @@ def _new_id() -> str:
     return uuid.uuid4().hex[:12]
 
 
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _clean(value: object) -> str:
@@ -47,8 +45,8 @@ def _normalize_import_job(raw: object, *, fail_unfinished: bool) -> dict | None:
     return {
         "job_id": _clean(raw.get("job_id")) or uuid.uuid4().hex,
         "status": status,
-        "created_at": _clean(raw.get("created_at")) or _now_iso(),
-        "updated_at": _clean(raw.get("updated_at")) or _clean(raw.get("created_at")) or _now_iso(),
+        "created_at": _clean(raw.get("created_at")) or utc_now_iso(),
+        "updated_at": _clean(raw.get("updated_at")) or _clean(raw.get("created_at")) or utc_now_iso(),
         "total": int(raw.get("total") or 0),
         "completed": int(raw.get("completed") or 0),
         "added": int(raw.get("added") or 0),
@@ -451,8 +449,8 @@ class Sub2APIImportService:
         job = {
             "job_id": uuid.uuid4().hex,
             "status": "pending",
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
+            "created_at": utc_now_iso(),
+            "updated_at": utc_now_iso(),
             "total": len(ids),
             "completed": 0,
             "added": 0,
@@ -478,7 +476,7 @@ class Sub2APIImportService:
         current = self._config.get_import_job(server_id)
         if current is None:
             return
-        next_job = {**current, **updates, "updated_at": _now_iso()}
+        next_job = {**current, **updates, "updated_at": utc_now_iso()}
         self._config.set_import_job(server_id, next_job)
 
     def _append_error(self, server_id: str, account_id: str, message: str) -> None:

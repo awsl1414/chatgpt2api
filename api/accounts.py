@@ -8,7 +8,7 @@ from __future__ import annotations
 import asyncio
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Coroutine, Literal
 
 from fastapi import APIRouter, Header, HTTPException
@@ -141,7 +141,7 @@ def _unique_tokens(tokens: list[str]) -> list[str]:
 
 
 def _download_timestamp() -> str:
-    return datetime.now().strftime("%Y%m%d-%H%M%S")
+    return datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
 
 
 def create_router() -> APIRouter:
