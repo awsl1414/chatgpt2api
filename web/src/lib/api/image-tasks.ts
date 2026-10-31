@@ -12,6 +12,8 @@ export type ImageTask = {
   updated_at: string;
   conversation_id?: string;
   data?: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
+  /** 后端任务成功时附带的上游 usage 统计（结构随上游返回，透传展示） */
+  usage?: Record<string, unknown>;
   error?: string;
   progress?: string;
   elapsed_secs?: number;

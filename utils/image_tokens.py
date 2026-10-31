@@ -57,7 +57,12 @@ def image_size_from_bytes(data: bytes) -> tuple[int, int] | None:
     return int(width), int(height)
 
 
-def _decode_data_url(value: str) -> bytes:
+def decode_data_url_bytes(value: str) -> bytes:
+    """把 data URL（或裸 base64）解码为图片字节。
+
+    与 api/image_inputs._decode_data_url（解码为带校验/限额的 ImageInput）
+    同名不同义（审查 R3-L11），改名区分。"""
+
     text = str(value or "").strip()
     payload = text.split(",", 1)[1] if text.startswith("data:") and "," in text else text
     return base64.b64decode(payload)
@@ -65,7 +70,7 @@ def _decode_data_url(value: str) -> bytes:
 
 def image_size_from_data_url(value: str) -> tuple[int, int] | None:
     try:
-        return image_size_from_bytes(_decode_data_url(value))
+        return image_size_from_bytes(decode_data_url_bytes(value))
     except Exception:
         return None
 

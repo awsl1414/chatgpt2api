@@ -38,7 +38,7 @@ class SentinelTokenGenerator:
         h ^= h >> 16
         return format(h & 0xFFFFFFFF, "08x")
 
-    def _get_config(self) -> list:
+    def _get_config(self) -> list[object]:
         perf_now = random.uniform(1000, 50000)
         return [
             "1920x1080",

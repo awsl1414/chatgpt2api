@@ -20,7 +20,6 @@ editable_file）通过 `BackendClient` 协议依赖本类；对外组装层见
 """
 
 import base64
-import os
 import threading
 import time
 from collections.abc import Callable, Iterator
@@ -368,7 +367,7 @@ class OpenAIBackendCore:
                 and "\n" not in image
                 and "\r" not in image
         ):
-            file_path = Path(os.path.expanduser(image))
+            file_path = Path(image).expanduser()
             if file_path.exists() and file_path.is_file():
                 return file_path.read_bytes()
         payload = image.split(",", 1)[1] if image.startswith("data:") and "," in image else image
@@ -384,7 +383,7 @@ class OpenAIBackendCore:
                 and "\n" not in image
                 and "\r" not in image
         ):
-            candidate_path = Path(os.path.expanduser(image))
+            candidate_path = Path(image).expanduser()
             if candidate_path.exists() and candidate_path.is_file():
                 file_name = candidate_path.name
         image = Image.open(BytesIO(data))

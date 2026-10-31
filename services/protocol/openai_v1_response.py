@@ -15,6 +15,7 @@ from services.protocol.message_utils import (
     encode_images,
     normalize_messages,
 )
+from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.openai_v1_chat_complete import stream_text_deltas, text_backend
 from services.protocol.web_search_tool import (
     WEB_SEARCH_TOOL_TYPES,
@@ -273,7 +274,7 @@ def text_response_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]
     return model, messages
 
 
-def stream_text_response(backend, body: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
+def stream_text_response(backend: OpenAIBackendAPI, body: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
     model = str(body.get("model") or "auto").strip() or "auto"
     messages = messages if messages is not None else messages_from_input(body.get("input"), body.get("instructions"))
     thinking_effort = thinking_effort_from_body(body)

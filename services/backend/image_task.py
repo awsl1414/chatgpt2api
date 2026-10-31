@@ -17,7 +17,7 @@ from typing import Any
 from curl_cffi import requests
 
 from services.backend.context import BackendClient
-from services.backend.search import add_unique
+from utils.collection import add_unique
 from services.config import config
 from services.errors import ImageContentPolicyError, ImagePollTimeoutError
 from utils.helper import UpstreamHTTPError, ensure_ok

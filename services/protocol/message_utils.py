@@ -106,7 +106,7 @@ def build_image_prompt(prompt: str, size: str | None, quality: str = "auto") -> 
     return f"{prompt.strip()}\n\n{''.join(hints)}" if hints else prompt
 
 
-def encoding_for_model(model: str):
+def encoding_for_model(model: str) -> tiktoken.Encoding:
     """返回模型对应的 tiktoken 编码，未知模型回退到 o200k_base / cl100k_base。"""
     try:
         return tiktoken.encoding_for_model(model)

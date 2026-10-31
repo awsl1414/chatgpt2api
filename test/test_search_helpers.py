@@ -9,8 +9,8 @@
   提取（finish_details → metadata）、正文 URL 补充进 sources
 """
 
+from utils.collection import add_unique
 from services.backend.search import (
-    add_unique,
     clean_search_url,
     extract_search_result,
     extract_search_sources,

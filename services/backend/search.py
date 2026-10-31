@@ -2,8 +2,8 @@
 
 基于 `/backend-api/f/conversation` 的 search 会话发起一次网页搜索，
 轮询对话文档直到答案稳定（或超时），并从 assistant 消息中提取答案与引用来源。
-供 services.protocol.openai_search 调用；`walk_dicts` / `add_unique` 为
-包内共享的纯工具函数。需要客户端状态的函数以 `api: BackendClient` 显式声明依赖。
+供 services.protocol.openai_search 调用；`walk_dicts` 为
+包内共享的纯工具函数（`add_unique` 已下沉 utils.collection）。需要客户端状态的函数以 `api: BackendClient` 显式声明依赖。
 """
 
 import json
@@ -13,6 +13,7 @@ from typing import Any
 
 from services.backend.context import BackendClient
 from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid
+from utils.collection import add_unique
 
 SEARCH_MODEL = "gpt-5-5"
 SEARCH_TIMEOUT_SECS = 300.0
@@ -227,7 +228,3 @@ def walk_dicts(payload: Any) -> list[dict[str, Any]]:
 def clean_search_url(value: Any) -> str:
     return str(value or "").strip().rstrip(".,;，。；")
 
-def add_unique(values: list[str], candidates: list[str]) -> None:
-    for candidate in candidates:
-        if candidate and candidate not in values:
-            values.append(candidate)

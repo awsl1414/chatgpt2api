@@ -22,6 +22,7 @@ from services.protocol.message_utils import (
     prompt_with_global_system,
 )
 from utils.helper import is_supported_image_model
+from utils.collection import add_unique
 
 
 @dataclass
@@ -203,12 +204,6 @@ def apply_patch_op(operation: dict[str, Any], current_text: str, history_text: s
         return strip_history(value, history_text)
     return current_text
 
-
-def add_unique(values: list[str], candidates: list[str]) -> None:
-    """把 candidates 中非空且未出现的值追加进 values（原地修改）。"""
-    for candidate in candidates:
-        if candidate and candidate not in values:
-            values.append(candidate)
 
 
 FILE_SERVICE_ID_RE = re.compile(r"file-service://([A-Za-z0-9_-]+)")

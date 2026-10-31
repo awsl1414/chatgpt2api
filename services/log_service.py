@@ -4,6 +4,7 @@ import hashlib
 import json
 import itertools
 import time
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -14,7 +15,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from services.config import DATA_DIR
-from services.errors import DomainError, ImageGenerationError, public_image_error_message
+from services.content_filter import check_request
+from services.errors import ContentFilterError, DomainError, ImageGenerationError, public_image_error_message
 from services.protocol.error_response import anthropic_error_response, openai_error_response
 from utils.helper import anthropic_sse_stream, sse_json_stream
 
@@ -208,7 +210,7 @@ def _protocol_error_response(exc: Exception, status_code: int, sse: str) -> JSON
     return openai_error_response(message, status_code)
 
 
-def _next_item(items):
+def _next_item(items: Iterator[Any]) -> tuple[bool, Any]:
     try:
         return True, next(items)
     except StopIteration:
@@ -267,7 +269,7 @@ class LoggedCall:
             return StreamingResponse(sender(()), media_type="text/event-stream")
         return StreamingResponse(sender(self.stream(itertools.chain([first], result))), media_type="text/event-stream")
 
-    def stream(self, items):
+    def stream(self, items: Iterator[Any]) -> Iterator[Any]:
         urls: list[str] = []
         account_emails: list[str] = []
         conversation_ids: list[str] = []
@@ -332,3 +334,16 @@ class LoggedCall:
         if collected_urls and not self.endpoint.startswith("/v1/search"):
             detail["urls"] = list(dict.fromkeys(collected_urls))
         log_service.add(LOG_TYPE_CALL, f"{self.summary}{suffix}", detail)
+
+
+async def filter_or_log(call: LoggedCall, text: str) -> None:
+    """执行内容审核；被拒时记录一次「调用失败」日志并原样抛出异常。
+
+    api/ai.py 与 api/image_tasks.py 的 /v1 与任务端点共用（审查 R3-L6：
+    原先两处 api 文件各持一份逐字相同的实现）。
+    """
+    try:
+        await run_in_threadpool(check_request, text)
+    except ContentFilterError as exc:
+        call.log("调用失败", status="failed", error=str(exc.detail))
+        raise

@@ -7,10 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from api.image_inputs import parse_image_edit_request, read_image_sources
 from api.support import require_identity, resolve_image_base_url
-from services.content_filter import check_request, request_shape, request_text
-from services.errors import ContentFilterError
+from services.content_filter import request_shape, request_text
+
 from services.editable_file_task_service import editable_file_task_service
-from services.log_service import LoggedCall
+from services.log_service import LoggedCall, filter_or_log
 from services.protocol import (
     anthropic_v1_messages,
     openai_v1_chat_complete,
@@ -20,7 +20,6 @@ from services.protocol import (
     openai_v1_response,
     openai_search,
 )
-
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
@@ -32,7 +31,6 @@ class ImageGenerationRequest(BaseModel):
     history_disabled: bool = True
     stream: bool | None = None
 
-
 class ChatCompletionRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     model: str | None = None
@@ -42,7 +40,6 @@ class ChatCompletionRequest(BaseModel):
     modalities: list[str] | None = None
     messages: list[dict[str, object]] | None = None
 
-
 class ResponseCreateRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     model: str | None = None
@@ -51,7 +48,6 @@ class ResponseCreateRequest(BaseModel):
     tool_choice: object | None = None
     stream: bool | None = None
 
-
 class AnthropicMessageRequest(BaseModel):
     model_config = ConfigDict(extra="allow")
     model: str | None = None
@@ -59,24 +55,13 @@ class AnthropicMessageRequest(BaseModel):
     system: object | None = None
     stream: bool | None = None
 
-
 class SearchRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
-
 
 class EditableFileTaskRequest(BaseModel):
     prompt: str = ""
     base64_images: list[str] = Field(default_factory=list)
     client_task_id: str | None = None
-
-
-async def filter_or_log(call: LoggedCall, text: str) -> None:
-    try:
-        await run_in_threadpool(check_request, text)
-    except ContentFilterError as exc:
-        call.log("调用失败", status="failed", error=str(exc.detail))
-        raise
-
 
 def create_router() -> APIRouter:
     router = APIRouter()

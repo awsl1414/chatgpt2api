@@ -45,7 +45,12 @@ def has_unsupported_tools(body: dict[str, Any], allowed_types: set[str]) -> bool
     return any(_tool_type(tool) not in allowed_types for tool in tools if isinstance(tool, dict))
 
 
-def message_text(value: object) -> str:
+def join_message_text(value: object) -> str:
+    """拼接 web search 工具消息文本（strip 各段后以空行连接）。
+
+    与 message_utils.message_text（保留原样分段拼接、不 strip）同名不同义，
+    曾易误 import（审查 R3-L11），故改名区分。
+    """
     if isinstance(value, str):
         return value.strip()
     if isinstance(value, list):
@@ -67,7 +72,7 @@ def search_query_from_messages(messages: list[dict[str, Any]]) -> str:
     for message in reversed(messages):
         if str(message.get("role") or "").strip().lower() != "user":
             continue
-        text = message_text(message.get("content"))
+        text = join_message_text(message.get("content"))
         if text:
             return text
     return ""
