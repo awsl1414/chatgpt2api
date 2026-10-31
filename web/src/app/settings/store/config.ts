@@ -94,6 +94,10 @@ export const useConfigStore = create<ConfigStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, image_account_concurrency: value } } : {});
   },
 
+  setAllowRemoteImageFetch: (value) => {
+    set((state) => state.config ? { config: { ...state.config, allow_remote_image_fetch: value } } : {});
+  },
+
   setImageSettleEnabled: (value) => {
     set((state) => state.config
       ? { config: { ...state.config, image_settle_enabled: value, image_check_before_hit_enabled: value } }
@@ -366,6 +370,7 @@ type ConfigStore = {
   setImageRetentionDays: (value: string) => void;
   setImagePollTimeoutSecs: (value: string) => void;
   setImageAccountConcurrency: (value: string) => void;
+  setAllowRemoteImageFetch: (value: boolean) => void;
   setImageSettleEnabled: (value: boolean) => void;
   setImageCheckBeforeHitEnabled: (value: boolean) => void;
   setImageRemoveConversationAfterResult: (value: boolean) => void;

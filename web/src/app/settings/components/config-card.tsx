@@ -30,6 +30,7 @@ export function ConfigCard() {
   const setImageRetentionDays = useConfigStore((state) => state.setImageRetentionDays);
   const setImagePollTimeoutSecs = useConfigStore((state) => state.setImagePollTimeoutSecs);
   const setImageAccountConcurrency = useConfigStore((state) => state.setImageAccountConcurrency);
+  const setAllowRemoteImageFetch = useConfigStore((state) => state.setAllowRemoteImageFetch);
   const setImageSettleEnabled = useConfigStore((state) => state.setImageSettleEnabled);
   const setImageRemoveConversationAfterResult = useConfigStore((state) => state.setImageRemoveConversationAfterResult);
   const setImageRemoveConversationAlways = useConfigStore((state) => state.setImageRemoveConversationAlways);
@@ -100,6 +101,18 @@ export function ConfigCard() {
               className="h-10 rounded-xl border-stone-200 bg-white"
             />
             <p className="text-xs text-stone-500">用于生成图片结果的访问前缀地址。</p>
+          </div>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3 rounded-xl border border-stone-200 bg-white px-4 py-3">
+              <Checkbox
+                checked={config?.allow_remote_image_fetch !== false}
+                onCheckedChange={(checked) => setAllowRemoteImageFetch(Boolean(checked))}
+              />
+              <span className="text-sm text-stone-700">允许拉取远程图片</span>
+            </div>
+            <p className="text-xs text-stone-500">
+              打开后请求中的远程 image_url（http/https）由服务端拉取，内网图源依赖此能力，默认开启；服务端会向请求指定的任意 URL 发起请求，存在被用于探测内网的风险，面向公网开放时建议关闭，仅接受 base64/data 形式的图片输入。
+            </p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">默认请求上游模型名称</label>

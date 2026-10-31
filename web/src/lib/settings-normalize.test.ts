@@ -28,6 +28,7 @@ describe("normalizeConfig 空配置默认值", () => {
     expect(config.image_retention_days).toBe(30);
     expect(config.image_poll_timeout_secs).toBe(120);
     expect(config.image_account_concurrency).toBe(3);
+    expect(config.allow_remote_image_fetch).toBe(true);
     expect(config.image_settle_enabled).toBe(true);
     expect(config.image_check_before_hit_enabled).toBe(true);
     expect(config.image_remove_conversation_after_result).toBe(false);
@@ -150,6 +151,14 @@ describe("buildSaveConfig 收口", () => {
     expect(saved.image_settle_secs).toBe(2.0);
     expect(saved.image_timeout_retry_secs).toBe(1);
     expect(saved.backup?.rotation_keep).toBe(0);
+  });
+
+  it("allow_remote_image_fetch 默认 true，显式 false 保留", () => {
+    // 后端默认开启（SSRF 防护开关），缺省/undefined 归一化为 true
+    expect(normalizeConfig({} as SettingsConfig).allow_remote_image_fetch).toBe(true);
+    expect(normalizeConfig({ allow_remote_image_fetch: false } as SettingsConfig).allow_remote_image_fetch).toBe(false);
+    expect(buildSaveConfig({ allow_remote_image_fetch: false } as SettingsConfig).allow_remote_image_fetch).toBe(false);
+    expect(buildSaveConfig({} as SettingsConfig).allow_remote_image_fetch).toBe(true);
   });
 
   it("image_storage 关闭时强制 local，开启时保留 webdav/both", () => {

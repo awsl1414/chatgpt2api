@@ -98,6 +98,7 @@ export type SettingsConfig = {
   image_poll_initial_wait_secs?: number | string;
   image_account_concurrency?: number | string;
   image_parallel_generation?: boolean;
+  allow_remote_image_fetch?: boolean;
   image_settle_enabled?: boolean;
   image_check_before_hit_enabled?: boolean;
   image_remove_conversation_after_result?: boolean;
