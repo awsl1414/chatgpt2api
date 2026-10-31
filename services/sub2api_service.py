@@ -15,6 +15,7 @@ from curl_cffi.requests import Session
 from services.proxy_service import proxy_settings
 
 from services.account_service import account_service
+from utils.limits import SHORT_REQUEST_TIMEOUT_SECS
 from services.config import DATA_DIR
 from services.errors import InvalidRequestError, Sub2apiError
 
@@ -196,7 +197,7 @@ def _login(base_url: str, email: str, password: str) -> tuple[str, float]:
             url,
             json={"email": email, "password": password},
             headers={"Accept": "application/json", "Content-Type": "application/json"},
-            timeout=30,
+            timeout=SHORT_REQUEST_TIMEOUT_SECS,
         )
         if not response.ok:
             raise Sub2apiError(f"sub2api login failed: HTTP {response.status_code} {response.text[:200]}")
@@ -301,7 +302,7 @@ def list_remote_accounts(server: dict) -> list[dict]:
                 f"{base_url.rstrip('/')}/api/v1/admin/accounts",
                 headers=headers,
                 params=params,
-                timeout=30,
+                timeout=SHORT_REQUEST_TIMEOUT_SECS,
             )
             if not response.ok:
                 raise Sub2apiError(f"sub2api list failed: HTTP {response.status_code} {response.text[:200]}")
@@ -357,7 +358,7 @@ def list_remote_groups(server: dict) -> list[dict]:
                     "page": page,
                     "page_size": 200,
                 },
-                timeout=30,
+                timeout=SHORT_REQUEST_TIMEOUT_SECS,
             )
             if not response.ok:
                 raise Sub2apiError(f"sub2api groups failed: HTTP {response.status_code} {response.text[:200]}")
@@ -406,7 +407,7 @@ def _fetch_access_tokens_for_accounts(server: dict, account_ids: list[str]) -> t
             f"{base_url.rstrip('/')}/api/v1/admin/accounts/data",
             headers=headers,
             params={"ids": ",".join(ids), "timezone": "Asia/Shanghai"},
-            timeout=30,
+            timeout=SHORT_REQUEST_TIMEOUT_SECS,
         )
         if not response.ok:
             raise Sub2apiError(f"HTTP {response.status_code}")

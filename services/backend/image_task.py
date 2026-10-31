@@ -22,10 +22,14 @@ from services.config import config
 from services.errors import ImageContentPolicyError, ImagePollTimeoutError
 from utils.helper import UpstreamHTTPError, ensure_ok
 from utils.log import logger
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
 
 FILE_SERVICE_ID_RE = re.compile(r"file-service://([A-Za-z0-9_-]+)")# 真正的图片文件 ID 格式：file_00000000 + 24位十六进制字符（共32字符）
 REAL_IMAGE_FILE_ID_RE = re.compile(r"\bfile_00000000[a-f0-9]{24}\b")
 SEDIMENT_ID_RE = re.compile(r"sediment://([A-Za-z0-9_-]+)")
+
+# 生成结果图片下载超时
+IMAGE_DOWNLOAD_TIMEOUT_SECS = 120
 
 # 内容政策违规错误关键词（上游拒绝生成图片的各种表述）
 _CONTENT_POLICY_KEYWORDS = (
@@ -195,6 +199,7 @@ def poll_image_results(
 
     def _retry_sleep(reason: str, status_code: int | None, error: str | None, retry_after: int | None) -> bool:
         # retry_after=0 means "retry immediately" — must not be coerced via falsy check.
+        # 指数退避：2^attempt 秒、指数封顶 4（即最长等待 16s）；有 Retry-After 时优先采用
         base = retry_after if retry_after is not None else min(2 ** min(attempt, 4), 16)
         backoff = base + random.uniform(0, 0.5)
         remaining = _remaining()
@@ -335,7 +340,7 @@ def get_file_download_url(api: BackendClient, file_id: str) -> str:
     """获取文件下载地址。"""
     path = f"/backend-api/files/{file_id}/download"
     response = api.session.get(api.base_url + path, headers=api._headers(path, {"Accept": "application/json"}),
-                                timeout=60)
+                                timeout=DEFAULT_REQUEST_TIMEOUT_SECS)
     ensure_ok(response, path)
     data = response.json()
     return data.get("download_url") or data.get("url") or ""
@@ -344,7 +349,7 @@ def get_attachment_download_url(api: BackendClient, conversation_id: str, attach
     """通过 conversation 附件接口获取下载地址。"""
     path = f"/backend-api/conversation/{conversation_id}/attachment/{attachment_id}/download"
     response = api.session.get(api.base_url + path, headers=api._headers(path, {"Accept": "application/json"}),
-                                timeout=60)
+                                timeout=DEFAULT_REQUEST_TIMEOUT_SECS)
     ensure_ok(response, path)
     data = response.json()
     return data.get("download_url") or data.get("url") or ""
@@ -564,7 +569,7 @@ def resolve_conversation_image_urls(
 def download_image_bytes(api: BackendClient, urls: list[str]) -> list[bytes]:
     images = []
     for url in urls:
-        response = api.session.get(url, timeout=120)
+        response = api.session.get(url, timeout=IMAGE_DOWNLOAD_TIMEOUT_SECS)
         ensure_ok(response, "image_download")
         if response.content not in images:
             images.append(response.content)

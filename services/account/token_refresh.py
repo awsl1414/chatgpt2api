@@ -70,7 +70,7 @@ class TokenRefreshService:
                     "refresh_token": refresh_token,
                     "client_id": platform_oauth_client_id,
                 },
-                timeout=60,
+                timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
             )
             data = response.json() if response.text else {}
             if response.status_code != 200 or not isinstance(data, dict) or not data.get("access_token"):

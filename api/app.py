@@ -83,6 +83,7 @@ def create_app() -> FastAPI:
             yield
         finally:
             stop_event.set()
+            # 关停时给后台线程 1 秒让位退出，超时则随进程直接回收
             thread.join(timeout=1)
             cleanup_thread.join(timeout=1)
             backup_service.stop()

@@ -9,6 +9,9 @@ import json
 import random
 import time
 import uuid
+
+# sentinel frame 页请求超时
+SENTINEL_FRAME_TIMEOUT_SECS = 20
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -131,7 +134,7 @@ def build_sentinel_token(
             "sec-ch-ua-mobile": "?0",
             "sec-ch-ua-platform": '"Windows"',
         },
-        timeout=20,
+        timeout=SENTINEL_FRAME_TIMEOUT_SECS,
         verify=False,
     )
 

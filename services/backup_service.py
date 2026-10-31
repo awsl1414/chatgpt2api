@@ -10,6 +10,8 @@ import io
 import json
 import os
 import random
+
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, SHORT_REQUEST_TIMEOUT_SECS
 import subprocess
 import tarfile
 import threading
@@ -243,7 +245,7 @@ class CloudflareR2Client:
 
     def test_connection(self) -> dict[str, object]:
         self.validate()
-        response = self._request("GET", query={"list-type": "2", "max-keys": "1"}, timeout=30.0)
+        response = self._request("GET", query={"list-type": "2", "max-keys": "1"}, timeout=SHORT_REQUEST_TIMEOUT_SECS)
         if response.status_code >= 400:
             raise BackupError(f"连接 R2 失败：HTTP {response.status_code}")
         return {"ok": True, "status": int(response.status_code)}
@@ -259,12 +261,12 @@ class CloudflareR2Client:
         return {"key": key, "etag": str(response.headers.get("etag") or "").strip('"')}
 
     def delete_object(self, key: str) -> None:
-        response = self._request("DELETE", key, timeout=30.0)
+        response = self._request("DELETE", key, timeout=SHORT_REQUEST_TIMEOUT_SECS)
         if response.status_code >= 400 and response.status_code != 404:
             raise BackupError(f"删除备份失败：HTTP {response.status_code}")
 
     def download_bytes(self, key: str) -> bytes:
-        response = self._request("GET", key, timeout=60.0)
+        response = self._request("GET", key, timeout=DEFAULT_REQUEST_TIMEOUT_SECS)
         if response.status_code >= 400:
             raise BackupError(f"读取备份失败：HTTP {response.status_code}")
         return bytes(response.content or b"")
@@ -276,7 +278,7 @@ class CloudflareR2Client:
             query = {"list-type": "2", "prefix": f"{self.prefix.rstrip('/')}/", "max-keys": "1000"}
             if continuation:
                 query["continuation-token"] = continuation
-            response = self._request("GET", query=query, timeout=30.0)
+            response = self._request("GET", query=query, timeout=SHORT_REQUEST_TIMEOUT_SECS)
             if response.status_code >= 400:
                 raise BackupError(f"获取备份列表失败：HTTP {response.status_code}")
             text = response.text
@@ -327,6 +329,7 @@ class BackupService:
             thread = self._thread
             self._thread = None
         if thread and thread.is_alive():
+            # 停止信号最多等备份线程 2 秒收尾，避免长时间阻塞调用方
             thread.join(timeout=2)
 
     def _run(self) -> None:

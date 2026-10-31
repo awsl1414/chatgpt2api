@@ -22,6 +22,7 @@ from PIL import Image
 from services.backend.context import BackendClient
 from services.backend.search import SEARCH_CONVERSATION_ID_RE, walk_dicts
 from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, LONG_REQUEST_TIMEOUT_SECS
 
 
 EDITABLE_FILE_MODEL = "gpt-5-5-thinking"
@@ -30,6 +31,9 @@ EDITABLE_FILE_TIMEOUT_SECS = 1200.0
 EDITABLE_FILE_POLL_INTERVAL_SECS = 5.0
 EDITABLE_FILE_CLIENT_VERSION = "prod-bede35f9dcd856d080e012478f0c1031faa2588e"
 EDITABLE_FILE_CLIENT_BUILD_NUMBER = "6631702"
+# Azure Blob 直传图片二进制数据超时
+BLOB_UPLOAD_TIMEOUT_SECS = 120
+
 EDITABLE_FILE_PSD_OUTPUT_DIR = "data/files/psd"
 EDITABLE_FILE_PPT_OUTPUT_DIR = "data/files/ppt"
 EDITABLE_FILE_PPT_PROMPT = """我需要你根据用户的需求，来制作一个可以编辑的PPT，你可以使用Agent来做，你不要再继续询问用户问题，内容风格、版式、配色、内容结构和页面信息你可以自行补充并直接执行。整体的流程如下：
@@ -188,7 +192,7 @@ def upload_editable_base64_image(api: BackendClient, base64_image: str, index: i
             "store_in_library": True,
             "library_persistence_mode": "opportunistic",
         },
-        timeout=60,
+        timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
     )
     ensure_ok(response, path)
     payload = response.json()
@@ -209,7 +213,7 @@ def upload_editable_base64_image(api: BackendClient, base64_image: str, index: i
             "Accept-Language": "en-US,en;q=0.8",
         },
         data=data,
-        timeout=120,
+        timeout=BLOB_UPLOAD_TIMEOUT_SECS,
     )
     ensure_ok(response, "image_upload")
     path = f"/backend-api/files/{file_id}/uploaded"
@@ -217,7 +221,7 @@ def upload_editable_base64_image(api: BackendClient, base64_image: str, index: i
         api.base_url + path,
         headers=api._headers(path, {"Accept": "*/*", "Content-Type": "application/json"}),
         data="{}",
-        timeout=60,
+        timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
     )
     ensure_ok(response, path)
     return {
@@ -272,7 +276,7 @@ def prepare_editable_conversation(api: BackendClient, prompt: str, attachment_mi
         api.base_url + path,
         headers=api._headers(path, {"Accept": "*/*", "Content-Type": "application/json", "X-Conduit-Token": "no-token"}),
         json=payload,
-        timeout=60,
+        timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
     )
     ensure_ok(response, path)
     conduit_token = str(response.json().get("conduit_token") or "")
@@ -345,7 +349,7 @@ def run_editable_conversation(api: BackendClient, prompt: str, uploaded: list[di
             "force_parallel_switch": "auto",
             "thinking_effort": EDITABLE_FILE_THINKING_EFFORT,
         },
-        timeout=300,
+        timeout=LONG_REQUEST_TIMEOUT_SECS,
         stream=True,
     )
     ensure_ok(response, path)
@@ -394,7 +398,7 @@ def wait_editable_output_artifacts(
 
 def get_editable_conversation_detail(api: BackendClient, conversation_id: str) -> dict[str, Any]:
     path = f"/backend-api/conversation/{conversation_id}"
-    response = api.session.get(api.base_url + path, headers=editable_conversation_document_headers(api, path, conversation_id), timeout=60)
+    response = api.session.get(api.base_url + path, headers=editable_conversation_document_headers(api, path, conversation_id), timeout=DEFAULT_REQUEST_TIMEOUT_SECS)
     ensure_ok(response, path)
     return response.json()
 
@@ -500,7 +504,7 @@ def download_editable_artifact(
     download_url = resolve_editable_download_url(api, conversation_id, artifact)
     if not download_url:
         raise RuntimeError(f"download url not found for artifact: {artifact}")
-    response = api.session.get(download_url, timeout=300)
+    response = api.session.get(download_url, timeout=LONG_REQUEST_TIMEOUT_SECS)
     ensure_ok(response, "artifact_download")
     content_type = clean_editable_mime_type(response.headers.get("Content-Type") or artifact.mime_type)
     file_name = resolve_editable_output_name(artifact, response.url, response.headers.get("Content-Disposition"), content_type, primary_mime_types, primary_mime_keywords, primary_default_extension)
@@ -519,7 +523,7 @@ def resolve_editable_download_url(api: BackendClient, conversation_id: str, arti
             api.base_url + path,
             headers=editable_download_headers(api, path, conversation_id, "/backend-api/conversation/{conversation_id}/interpreter/download"),
             params={"message_id": artifact.message_id, "sandbox_path": artifact.sandbox_path},
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         if 200 <= response.status_code < 300:
             url = download_url_from_response(response)
@@ -530,7 +534,7 @@ def resolve_editable_download_url(api: BackendClient, conversation_id: str, arti
         response = api.session.get(
             api.base_url + path,
             headers=editable_download_headers(api, path, conversation_id, "/backend-api/conversation/{conversation_id}/attachment/{attachment_id}/download"),
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         if 200 <= response.status_code < 300:
             url = download_url_from_response(response)
@@ -542,7 +546,7 @@ def resolve_editable_download_url(api: BackendClient, conversation_id: str, arti
             api.base_url + path,
             headers=editable_download_headers(api, path, conversation_id, "/backend-api/files/download/{file_id}"),
             params={"post_id": "", "inline": "false"},
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         if 200 <= response.status_code < 300:
             url = download_url_from_response(response)
@@ -553,7 +557,7 @@ def resolve_editable_download_url(api: BackendClient, conversation_id: str, arti
         response = api.session.get(
             api.base_url + path,
             headers=editable_download_headers(api, path, conversation_id, "/backend-api/files/download/{file_id}"),
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         if 200 <= response.status_code < 300:
             url = download_url_from_response(response)

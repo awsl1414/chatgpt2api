@@ -19,6 +19,7 @@ from fastapi.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from services.proxy_service import proxy_settings
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
 
 ImageInput = tuple[bytes, str, str]
 ImageSource = str | UploadFile | ImageInput
@@ -271,7 +272,7 @@ def _download_image_url(url: str) -> ImageInput:
         response = requests.get(
             source,
             headers={"Accept": "image/*,*/*;q=0.8", "User-Agent": "chatgpt2api image fetcher"},
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
             allow_redirects=True,
             **proxy_settings.build_session_kwargs(),
         )

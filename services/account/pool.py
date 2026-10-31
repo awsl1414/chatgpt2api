@@ -49,6 +49,11 @@ from services.storage.base import StorageBackend
 from utils.helper import anonymize_token
 from utils.jwt import decode_jwt_payload
 
+# 图片并发槽位条件等待的轮询 tick（秒）：等待其他请求释放配额时按此间隔醒来复查
+IMAGE_SLOT_WAIT_TICK_SECS = 1.0
+# 单次取 token 的最大尝试次数上限：防止 token 轮换导致无限循环
+IMAGE_TOKEN_MAX_ATTEMPTS = 20
+
 # 生图候选校验回调：fetch_remote_info(token, event) -> dict | None
 VerifyCallback = Callable[..., dict | None]
 # 文本候选刷新回调：refresh_access_token(token, event) -> token
@@ -562,7 +567,7 @@ class AccountPool:
                     self._index += 1
                     self._image_inflight[access_token] = int(self._image_inflight.get(access_token, 0)) + 1
                     return access_token
-                self._image_slot_condition.wait(timeout=1.0)
+                self._image_slot_condition.wait(timeout=IMAGE_SLOT_WAIT_TICK_SECS)
 
     def release_image_slot(self, access_token: str) -> None:
         if not access_token:
@@ -591,7 +596,7 @@ class AccountPool:
         verify = self.verify_callback
         if verify is None:
             raise RuntimeError("AccountPool.verify_callback 未注入（应由组装层设置）")
-        max_attempts = 20  # 防止无限循环
+        max_attempts = IMAGE_TOKEN_MAX_ATTEMPTS
         attempted_tokens: set[str] = set()
         for _attempt in range(max_attempts):
             access_token = self._acquire_next_candidate_token(

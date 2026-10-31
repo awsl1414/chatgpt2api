@@ -19,6 +19,9 @@ from utils.helper import UpstreamHTTPError
 from utils.jwt import decode_jwt_payload
 from utils.log import logger
 
+# Codex 生图请求与上游 HTTP 超时（长任务，far 大于常规请求）
+CODEX_IMAGE_TIMEOUT_SECS = 1200
+
 
 
 # 顶层模型：gpt-5.5 已被上游拒绝（400 model_not_found，2026-10-30 实测），
@@ -249,7 +252,7 @@ def iter_codex_image_response_events(
         "event": "codex_responses_request_debug",
         "url": api.base_url + path,
         "transport": "urllib.request",
-        "timeout_secs": 1200,
+        "timeout_secs": CODEX_IMAGE_TIMEOUT_SECS,
         "account_email": str(account.get("email") or "").strip(),
         "source_type": str(account.get("source_type") or "").strip(),
         "account_type": str(account.get("type") or "").strip(),
@@ -282,7 +285,7 @@ def iter_codex_image_response_events(
         },
     })
     try:
-        with urllib.request.urlopen(request, timeout=1200) as raw:
+        with urllib.request.urlopen(request, timeout=CODEX_IMAGE_TIMEOUT_SECS) as raw:
             yield from iter_codex_response_events(raw)
     except urllib.error.HTTPError as error:
         body_text = error.read().decode("utf-8", "replace")

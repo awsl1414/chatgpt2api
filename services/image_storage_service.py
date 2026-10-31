@@ -18,6 +18,7 @@ from curl_cffi import requests
 from PIL import Image
 
 from services.config import DATA_DIR, config
+from utils.limits import SHORT_REQUEST_TIMEOUT_SECS
 from services.errors import ImageStorageError, NotFoundError
 
 IMAGE_INDEX_FILE = DATA_DIR / "image_index.json"
@@ -109,7 +110,7 @@ class WebDAVClient:
         return {"auth": (self.username, self.password)} if self.username or self.password else {}
 
     def _request(self, method: str, url: str, **kwargs) -> requests.Response:
-        response = self.session.request(method, url, timeout=30, **self._auth_kwargs(), **kwargs)
+        response = self.session.request(method, url, timeout=SHORT_REQUEST_TIMEOUT_SECS, **self._auth_kwargs(), **kwargs)
         if response.status_code >= 400 and not (method == "MKCOL" and response.status_code in {405}):
             raise ImageStorageError(f"WebDAV {method} failed: HTTP {response.status_code}")
         return response
@@ -126,7 +127,7 @@ class WebDAVClient:
             if not item:
                 continue
             current = f"{current}/{quote(item, safe='')}"
-            response = self.session.request("MKCOL", current, timeout=30, **self._auth_kwargs())
+            response = self.session.request("MKCOL", current, timeout=SHORT_REQUEST_TIMEOUT_SECS, **self._auth_kwargs())
             if response.status_code in {201, 405}:
                 continue
             if response.status_code >= 400:
@@ -143,7 +144,7 @@ class WebDAVClient:
         return bytes(response.content)
 
     def delete(self, rel: str) -> bool:
-        response = self.session.request("DELETE", self.remote_url(rel), timeout=30, **self._auth_kwargs())
+        response = self.session.request("DELETE", self.remote_url(rel), timeout=SHORT_REQUEST_TIMEOUT_SECS, **self._auth_kwargs())
         if response.status_code in {200, 202, 204, 404}:
             return response.status_code != 404
         raise ImageStorageError(f"WebDAV DELETE failed: HTTP {response.status_code}")

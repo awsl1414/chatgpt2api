@@ -14,6 +14,7 @@ from typing import Any
 from services.backend.context import BackendClient
 from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid
 from utils.collection import add_unique
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, LONG_REQUEST_TIMEOUT_SECS
 
 SEARCH_MODEL = "gpt-5-5"
 SEARCH_TIMEOUT_SECS = 300.0
@@ -53,7 +54,7 @@ def prepare_search_conversation(api: BackendClient, prompt: str, model: str) -> 
             "supported_encodings": ["v1"],
             "client_contextual_info": {"app_name": "chatgpt.com"},
         },
-        timeout=60,
+        timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
     )
     ensure_ok(response, path)
     token = str(response.json().get("conduit_token") or "")
@@ -98,7 +99,7 @@ def run_search_conversation(api: BackendClient, prompt: str, conduit_token: str,
             "paragen_cot_summary_display_override": "allow",
             "force_parallel_switch": "auto",
         },
-        timeout=300,
+        timeout=LONG_REQUEST_TIMEOUT_SECS,
         stream=True,
     )
     ensure_ok(response, path)
@@ -143,7 +144,7 @@ def get_search_conversation(api: BackendClient, conversation_id: str) -> dict[st
     headers = api._headers(path, {"Accept": "*/*"})
     headers["Referer"] = f"{api.base_url}/c/{conversation_id}"
     headers["X-OpenAI-Target-Route"] = "/backend-api/conversation/{conversation_id}"
-    response = api.session.get(api.base_url + path, headers=headers, timeout=60)
+    response = api.session.get(api.base_url + path, headers=headers, timeout=DEFAULT_REQUEST_TIMEOUT_SECS)
     ensure_ok(response, path)
     return response.json()
 

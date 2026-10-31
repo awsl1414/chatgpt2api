@@ -109,7 +109,7 @@ class PasswordLoginService:
                     "referer": "https://platform.openai.com/",
                 },
                 allow_redirects=True,
-                timeout=30,
+                timeout=SHORT_REQUEST_TIMEOUT_SECS,
             )
 
             if resp.status_code not in (200, 302):
@@ -163,7 +163,7 @@ class PasswordLoginService:
                 f"{auth_base}/api/accounts/password/verify",
                 headers=login_headers,
                 json={"password": password},
-                timeout=30,
+                timeout=SHORT_REQUEST_TIMEOUT_SECS,
             )
 
             login_data = {}
@@ -232,7 +232,7 @@ class PasswordLoginService:
                     "redirect_uri": platform_oauth_redirect_uri,
                 },
                 verify=False,
-                timeout=60,
+                timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
             )
 
             token_data = {}
@@ -258,7 +258,7 @@ class PasswordLoginService:
                         "authorization": f"Bearer {access_token}",
                         "user-agent": user_agent,
                     },
-                    timeout=30,
+                    timeout=SHORT_REQUEST_TIMEOUT_SECS,
                 )
                 if me_resp.status_code == 200:
                     user_info = me_resp.json() if me_resp.text else {}

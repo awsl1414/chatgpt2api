@@ -37,6 +37,7 @@ from services.openai_oauth import (
     user_agent,
 )
 from services.proxy_service import proxy_settings
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
 from utils.log import logger
 
 
@@ -218,7 +219,7 @@ class OAuthLoginService:
                     "code": code,
                     "redirect_uri": redirect_uri,
                 },
-                timeout=60,
+                timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
             )
         except Exception as exc:
             raise OAuthLoginError(f"换 token 网络异常: {exc}") from exc

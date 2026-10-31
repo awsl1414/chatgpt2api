@@ -43,11 +43,19 @@ from utils.helper import ensure_ok, iter_sse_payloads, new_uuid
 from utils.log import logger
 from utils.pow import build_legacy_requirements_token, build_proof_token, parse_pow_resources
 from utils.turnstile import solve_turnstile_token
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, LONG_REQUEST_TIMEOUT_SECS, SHORT_REQUEST_TIMEOUT_SECS
 
 
 DEFAULT_CLIENT_VERSION = "prod-a194cd50d4416d3c0b47c740f206b12ce60f5887"
 DEFAULT_CLIENT_BUILD_NUMBER = "6708908"
 DEFAULT_POW_SCRIPT = "https://chatgpt.com/backend-api/sentinel/sdk.js"
+
+# 轻量元数据请求超时（/me、conversation/init、accounts check）
+META_REQUEST_TIMEOUT_SECS = 20
+# 会话引导与风控令牌请求超时（bootstrap 首页、sentinel prepare/finalize）
+SESSION_SETUP_TIMEOUT_SECS = 30
+# Azure Blob 直传图片二进制数据超时
+BLOB_UPLOAD_TIMEOUT_SECS = 120
 
 
 class OpenAIBackendCore:
@@ -190,7 +198,7 @@ class OpenAIBackendCore:
 
     def _get_me(self) -> dict[str, Any]:
         path = "/backend-api/me"
-        response = self.session.get(self.base_url + path, headers=self._headers(path), timeout=20)
+        response = self.session.get(self.base_url + path, headers=self._headers(path), timeout=META_REQUEST_TIMEOUT_SECS)
         if response.status_code != 200:
             self._raise_on_error(response, path)
         return response.json()
@@ -206,7 +214,7 @@ class OpenAIBackendCore:
                 "conversation_id": None,
                 "timezone_offset_min": -480,
             },
-            timeout=20,
+            timeout=META_REQUEST_TIMEOUT_SECS,
         )
         if response.status_code != 200:
             self._raise_on_error(response, path)
@@ -215,7 +223,7 @@ class OpenAIBackendCore:
     def _get_default_account(self) -> dict[str, Any]:
         path = "/backend-api/accounts/check/v4-2023-04-27"
         response = self.session.get(self.base_url + path + "?timezone_offset_min=-480", headers=self._headers(path),
-                                    timeout=20)
+                                    timeout=META_REQUEST_TIMEOUT_SECS)
         if response.status_code != 200:
             self._raise_on_error(response, path)
         payload = response.json()
@@ -353,7 +361,7 @@ class OpenAIBackendCore:
             self.base_url + path,
             headers=self._image_headers(path, requirements),
             json=payload,
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         ensure_ok(response, path)
         return response.json().get("conduit_token", "")
@@ -395,7 +403,7 @@ class OpenAIBackendCore:
             headers=self._headers(path, {"Content-Type": "application/json", "Accept": "application/json"}),
             json={"file_name": file_name, "file_size": len(data), "use_case": "multimodal", "width": width,
                   "height": height},
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         ensure_ok(response, path)
         upload_meta = response.json()
@@ -412,7 +420,7 @@ class OpenAIBackendCore:
                 "Accept-Language": "en-US,en;q=0.8",
             },
             data=data,
-            timeout=120,
+            timeout=BLOB_UPLOAD_TIMEOUT_SECS,
         )
         ensure_ok(response, "image_upload")
         path = f"/backend-api/files/{upload_meta['file_id']}/uploaded"
@@ -420,7 +428,7 @@ class OpenAIBackendCore:
             self.base_url + path,
             headers=self._headers(path, {"Content-Type": "application/json", "Accept": "application/json"}),
             data="{}",
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         ensure_ok(response, path)
         return {
@@ -502,7 +510,7 @@ class OpenAIBackendCore:
             self.base_url + path,
             headers=self._image_headers(path, requirements, conduit_token, "text/event-stream"),
             json=payload,
-            timeout=300,
+            timeout=LONG_REQUEST_TIMEOUT_SECS,
             stream=True,
         )
         ensure_ok(response, path)
@@ -512,7 +520,7 @@ class OpenAIBackendCore:
         """获取完整 conversation 详情。"""
         path = f"/backend-api/conversation/{conversation_id}"
         response = self.session.get(self.base_url + path, headers=self._headers(path, {"Accept": "application/json"}),
-                                    timeout=60)
+                                    timeout=DEFAULT_REQUEST_TIMEOUT_SECS)
         ensure_ok(response, path)
         return response.json()
 
@@ -529,7 +537,7 @@ class OpenAIBackendCore:
             self.base_url + path,
             headers=headers,
             json={"is_visible": False},
-            timeout=60,
+            timeout=DEFAULT_REQUEST_TIMEOUT_SECS,
         )
         ensure_ok(response, path)
         return response.json()
@@ -645,7 +653,7 @@ class OpenAIBackendCore:
             self.base_url + path,
             headers=self._conversation_headers(path, requirements),
             json=payload,
-            timeout=300,
+            timeout=LONG_REQUEST_TIMEOUT_SECS,
             stream=True,
         )
         ensure_ok(response, path)
@@ -721,7 +729,7 @@ class OpenAIBackendCore:
         response = self.session.get(
             self.base_url + "/",
             headers=self._bootstrap_headers(),
-            timeout=30,
+            timeout=SESSION_SETUP_TIMEOUT_SECS,
         )
         ensure_ok(response, "bootstrap")
         self.pow_script_sources, self.pow_data_build = parse_pow_resources(response.text)
@@ -738,7 +746,7 @@ class OpenAIBackendCore:
             self.base_url + prepare_path,
             headers=self._headers(prepare_path, {"Content-Type": "application/json"}),
             json={"p": p_token},
-            timeout=30,
+            timeout=SESSION_SETUP_TIMEOUT_SECS,
         )
         ensure_ok(response, "chat_requirements_prepare")
         prepare_data = response.json()
@@ -771,7 +779,7 @@ class OpenAIBackendCore:
                 "proof_token": proof_token,
                 "turnstile_token": turnstile_token,
             },
-            timeout=30,
+            timeout=SESSION_SETUP_TIMEOUT_SECS,
         )
         ensure_ok(response, "chat_requirements_finalize")
         data = response.json()
@@ -805,7 +813,7 @@ class OpenAIBackendCore:
         response = self.session.get(
             self.base_url + path,
             headers=self._headers(route),
-            timeout=30,
+            timeout=SESSION_SETUP_TIMEOUT_SECS,
         )
         ensure_ok(response, context)
         data = []
