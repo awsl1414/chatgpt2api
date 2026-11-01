@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import tiktoken
 
 from services.config import config
 from services.message_image import extract_image_from_message_content
 from utils.image_tokens import count_image_content_tokens
+
+if TYPE_CHECKING:
+    from services.protocol.prompt_plan import PromptPlan
 
 
 def encode_images(images: Iterable[tuple[bytes, str, str]]) -> list[str]:
@@ -38,6 +41,20 @@ def message_text(content: Any) -> str:
     return ""
 
 
+def _leading_system_texts(messages: object) -> list[str]:
+    """收集消息列表开头连续 system 消息的文本，用于 `normalize_messages` 的幂等判断。"""
+    texts: list[str] = []
+    if not isinstance(messages, list):
+        return texts
+    for message in messages:
+        if not isinstance(message, dict) or message.get("role") != "system":
+            break
+        text = message_text(message.get("content"))
+        if text:
+            texts.append(text)
+    return texts
+
+
 def normalize_messages(messages: object, system: Any = None) -> list[dict[str, Any]]:
     """把 OpenAI 风格的 messages 规范化为上游对话请求所需的结构。
 
@@ -45,12 +62,18 @@ def normalize_messages(messages: object, system: Any = None) -> list[dict[str, A
     - 全局 system prompt 与请求级 `system` 参数分别作为独立 system 消息前置；
     - user 消息中的图片（base64 / bytes 分段）被抽取为 `{"type": "image", ...}` 分段，
       与文本分段并存；其余消息只保留纯文本。
+
+    幂等保护：若消息列表开头已经存在内容相同的 system 消息（例如把上一次本函数的
+    输出再次送入），则跳过对应的前置注入，避免 global system 被重复注入。
+    新链路的注入决策统一由 `prompt_plan.build_prompt_plan` 承担，本函数保留给
+    尚未迁移的调用点使用。
     """
+    leading_system = _leading_system_texts(messages)
     normalized = []
-    if config.global_system_prompt:
+    if config.global_system_prompt and config.global_system_prompt not in leading_system:
         normalized.append({"role": "system", "content": config.global_system_prompt})
     system_text = message_text(system)
-    if system_text:
+    if system_text and system_text not in leading_system:
         normalized.append({"role": "system", "content": system_text})
     if isinstance(messages, list):
         for message in messages:
@@ -97,11 +120,15 @@ def assistant_history_messages(messages: list[dict[str, Any]]) -> list[str]:
 
 
 def build_image_prompt(prompt: str, size: str | None, quality: str = "auto") -> str:
-    """把接口契约中的 size / quality 参数以中文提示的形式拼进生图提示词。"""
+    """把接口契约中的 size / quality 参数以中文提示的形式拼进生图提示词。
+
+    `quality == "auto"` 时短路，不注入「输出图片质量为 auto。」这类无信息量的句子。
+    新链路请直接用 `prompt_plan.build_prompt_plan`；本函数保留给尚未迁移的调用点。
+    """
     hints = []
     if size:
         hints.append(f"输出图片尺寸为 {size}。")
-    if quality:
+    if quality and quality != "auto":
         hints.append(f"输出图片质量为 {quality}。")
     return f"{prompt.strip()}\n\n{''.join(hints)}" if hints else prompt
 
@@ -172,3 +199,6 @@ class ConversationRequest:
     base_url: str | None = None
     message_as_error: bool = False
     progress_callback: Any = None  # Callable[[str], None] | None
+    # 端点在请求路径内构造好的提示词事实源；下游直接渲染，不再重复拼装，
+    # 避免尺寸/质量提示被二次注入。为 None 时下游按字段自行构造（幂等）。
+    plan: PromptPlan | None = None

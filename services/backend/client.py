@@ -639,6 +639,13 @@ class OpenAIBackendCore:
             system_hints: list[str] | None = None,
             thinking_effort: str = "",
     ) -> Iterator[str]:
+        """向上游发起一次对话，逐条产出 SSE 原始载荷。
+
+        两条分支的提示词载体不同（由协议层 `prompt_plan` 渲染好后传入）：
+        - picture_v2：**只消费 `prompt`**（已压平并拼入 global system 与尺寸/质量
+          文本），`messages` 被整体丢弃——图片链路不支持多轮历史；
+        - 文本：消费 `messages` 数组（system 已作为首条消息），`prompt` 仅作兜底。
+        """
         system_hints = system_hints or []
         if "picture_v2" in system_hints:
             yield from self._stream_picture_conversation(prompt, model, images or [])

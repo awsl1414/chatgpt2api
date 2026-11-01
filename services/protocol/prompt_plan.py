@@ -156,6 +156,26 @@ def _apply_image_hints(prompt: str, size: str | None, quality: str) -> str:
     return f"{prompt.strip()}\n\n{''.join(hints)}" if hints else prompt
 
 
+def _strip_injected_fragments(text: str, fragments: list[str]) -> str:
+    """从已渲染的 system 文本中剥掉本模块注入过的片段，只留下调用方自带内容。
+
+    用于幂等：渲染结果是 `"\\n\\n".join(fragments)` 的形式，重复送入时若原样当作
+    请求级 system 会导致二次注入。这里按「片段 + 空行」逐段剥除前缀/后缀，
+    剩余部分才作为调用方自带 system 参与合并。
+    """
+    remainder = text
+    for fragment in fragments:
+        prefix = f"{fragment}\n\n"
+        suffix = f"\n\n{fragment}"
+        if remainder.startswith(prefix):
+            remainder = remainder[len(prefix):]
+        elif remainder == fragment:
+            remainder = ""
+        elif remainder.endswith(suffix):
+            remainder = remainder[: -len(suffix)]
+    return remainder
+
+
 def build_prompt_plan(
     *,
     model: str,
@@ -201,19 +221,31 @@ def build_prompt_plan(
         if isinstance(text, str) and text:
             leading_system.append(text)
 
+    request_system = _text_of(system)
+    injected_fragments = [
+        part for part in (global_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else "") if part
+    ]
+    # 幂等：把已渲染结果再次送入时，首条 system 是「global + 请求级 + 兜底」的合并文本。
+    # 逐段剥掉其中已注入的片段，剩下才是调用方自带的 system，从而不会二次注入。
+    # 不能按空行拆分比较——global 自身可能含空行。
+    leading_system = [_strip_injected_fragments(text, injected_fragments) for text in leading_system]
+
+    # 合并顺序固定为 [global, 请求级 system, tool_unavailable]，重复文本只保留首次。
     system_parts: list[str] = []
-    for part in (global_system, *leading_system, _text_of(system), TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else ""):
+    for part in (global_system, *leading_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else ""):
         if part and part not in system_parts:
             system_parts.append(part)
 
+    image_model = is_supported_image_model(model)
     final_prompt = str(prompt or "")
     if not final_prompt.strip():
         final_prompt = _prompt_from_messages(normalized)
-    if size_enabled:
+    # 尺寸/质量提示只对图片模型有意义：文本模型即使调用方传了 size_enabled 也保持原样。
+    if size_enabled and image_model:
         final_prompt = _apply_image_hints(final_prompt, size, quality)
 
     if hints is None:
-        hints = [PICTURE_V2_HINT] if is_supported_image_model(model) else []
+        hints = [PICTURE_V2_HINT] if image_model else []
 
     return PromptPlan(
         system="\n\n".join(system_parts),

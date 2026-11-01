@@ -17,7 +17,11 @@ from services.protocol.message_utils import (
     count_message_text_tokens,
     count_text_tokens,
     encode_images,
-    normalize_messages,
+)
+from services.protocol.prompt_plan import (
+    PromptPlan,
+    build_prompt_plan,
+    render_conversation_messages,
 )
 from services.protocol.web_search_tool import (
     WEB_SEARCH_TOOL_TYPES,
@@ -35,12 +39,6 @@ from utils.image_tokens import (
     count_image_inputs_tokens,
     count_image_output_items_tokens,
     image_usage,
-)
-
-TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
-    "This compatibility backend cannot execute local tools, shell commands, non-search tools, "
-    "or file operations. Do not claim to have run tools or inspected external resources. "
-    "If a user asks you to use a tool, say that tool execution is unavailable through this backend."
 )
 
 
@@ -101,11 +99,13 @@ def stream_text_chat_completion(
     messages: list[dict[str, Any]],
     model: str,
     thinking_effort: str = "",
+    plan: PromptPlan | None = None,
 ) -> Iterator[dict[str, Any]]:
+    """流式文本补全；`messages` 已是渲染好的上游数组，`plan` 供下游复用同一事实源。"""
     completion_id = f"chatcmpl-{uuid.uuid4().hex}"
     created = int(time.time())
     sent_role = False
-    request = ConversationRequest(model=model, messages=messages, thinking_effort=thinking_effort)
+    request = ConversationRequest(model=model, messages=messages, thinking_effort=thinking_effort, plan=plan)
     for delta_text in stream_text_deltas(backend, request):
         if not sent_role:
             sent_role = True
@@ -151,12 +151,28 @@ def chat_image_args(body: dict[str, Any]) -> tuple[str, str, int, list[tuple[byt
     return model, prompt, parse_image_count(body.get("n")), images
 
 
-def text_chat_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+def text_chat_request(body: dict[str, Any]) -> tuple[str, PromptPlan]:
+    """构造文本链路（/v1/chat/completions）的 `(model, 提示词事实源)`。
+
+    global system 与不支持的本地工具兜底文案都在 `build_prompt_plan` 内合并一次，
+    端点层不再单独调用 `normalize_messages`，避免重复注入。
+    缓存配置驱动的消息裁剪（`normalize_text_messages`）在构造前施加，
+    保持原有缓存指纹与去重语义。
+    """
     model = str(body.get("model") or "auto").strip() or "auto"
-    messages = normalize_text_messages(normalize_messages(chat_messages_from_body(body)))
-    if has_unsupported_tools(body, WEB_SEARCH_TOOL_TYPES):
-        messages.insert(0, {"role": "system", "content": TOOL_UNAVAILABLE_SYSTEM_MESSAGE})
-    return model, messages
+    messages = normalize_text_messages(chat_messages_from_body(body))
+    plan = build_prompt_plan(
+        model=model,
+        messages=messages,
+        tool_unavailable=has_unsupported_tools(body, WEB_SEARCH_TOOL_TYPES),
+    )
+    return model, plan
+
+
+def text_chat_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+    """返回 `(model, 上游 messages)`；messages 中 system 只出现一次（global 已去重）。"""
+    model, plan = text_chat_request(body)
+    return model, render_conversation_messages(plan)
 
 
 def chat_completion_annotations(annotations: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -207,14 +223,26 @@ def image_result_content(result: dict[str, Any]) -> str:
     return str(result.get("message") or "Image generation completed.")
 
 
-def image_chat_response(body: dict[str, Any]) -> dict[str, Any]:
+def image_chat_plan(body: dict[str, Any]) -> tuple[str, str, int, list[tuple[bytes, str, str]], PromptPlan]:
+    """解析图片链路参数并构造提示词事实源。
+
+    `/v1/chat/completions` 的契约里**没有** size 字段，因此固定
+    `size_enabled=False`：尺寸/质量参数不拼进提示词（设计意图，有测试守卫）。
+    """
     model, prompt, n, images = chat_image_args(body)
+    plan = build_prompt_plan(model=model, prompt=prompt, size_enabled=False)
+    return model, prompt, n, images, plan
+
+
+def image_chat_response(body: dict[str, Any]) -> dict[str, Any]:
+    model, prompt, n, images, plan = image_chat_plan(body)
     result = collect_image_outputs(stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
         model=model,
         n=n,
         response_format="b64_json",
         images=encode_images(images) or None,
+        plan=plan,
     )))
     response = completion_response(model, image_result_content(result), int(result.get("created") or 0) or None)
     usage = image_usage(
@@ -227,13 +255,14 @@ def image_chat_response(body: dict[str, Any]) -> dict[str, Any]:
 
 
 def image_chat_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
-    model, prompt, n, images = chat_image_args(body)
+    model, prompt, n, images, plan = image_chat_plan(body)
     image_outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
         model=model,
         n=n,
         response_format="b64_json",
         images=encode_images(images) or None,
+        plan=plan,
     ))
     yield from stream_image_chat_completion(image_outputs, model)
 
@@ -268,18 +297,20 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     if body.get("stream"):
         if is_image_chat_request(body):
             return image_chat_events(body)
-        model, messages = text_chat_parts(body)
+        model, plan = text_chat_request(body)
+        messages = render_conversation_messages(plan)
         if is_web_search_chat_request(body) and not has_unsupported_tools(body, WEB_SEARCH_TOOL_TYPES):
             return stream_web_search_chat_completion(messages, model)
         thinking_effort = thinking_effort_from_body(body)
         key = cache_key(body, messages, stream=True)
         return chat_completion_cache.get_or_compute_stream(
             key,
-            lambda: stream_text_chat_completion(text_backend(model), messages, model, thinking_effort),
+            lambda: stream_text_chat_completion(text_backend(model), messages, model, thinking_effort, plan),
         )
     if is_image_chat_request(body):
         return image_chat_response(body)
-    model, messages = text_chat_parts(body)
+    model, plan = text_chat_request(body)
+    messages = render_conversation_messages(plan)
     if is_web_search_chat_request(body) and not has_unsupported_tools(body, WEB_SEARCH_TOOL_TYPES):
         return web_search_chat_response(messages, model)
     thinking_effort = thinking_effort_from_body(body)
@@ -288,7 +319,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         key,
         lambda: completion_response(
             model,
-            collect_text(text_backend(model), ConversationRequest(model=model, messages=messages, thinking_effort=thinking_effort)),
+            collect_text(text_backend(model), ConversationRequest(model=model, messages=messages, thinking_effort=thinking_effort, plan=plan)),
             messages=messages,
         ),
     )
@@ -329,6 +360,7 @@ def stream_text_deltas(backend: OpenAIBackendAPI, request: ConversationRequest) 
                 model=request.model,
                 prompt=request.prompt,
                 thinking_effort=request.thinking_effort,
+                plan=request.plan,
             ):
                 if event.get("type") != "conversation.delta":
                     continue

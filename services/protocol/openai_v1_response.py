@@ -14,7 +14,11 @@ from services.protocol.message_utils import (
     count_message_text_tokens,
     count_text_tokens,
     encode_images,
-    normalize_messages,
+)
+from services.protocol.prompt_plan import (
+    PromptPlan,
+    build_prompt_plan,
+    render_conversation_messages,
 )
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.openai_v1_chat_complete import stream_text_deltas, text_backend
@@ -35,12 +39,6 @@ from utils.image_tokens import (
     count_image_output_items_tokens,
     image_usage,
     token_usage,
-)
-
-TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
-    "This compatibility backend cannot execute local tools, shell commands, non-search tools, "
-    "or file operations. Do not claim to have run tools or inspected external resources. "
-    "If a user asks you to use a tool, say that tool execution is unavailable through this backend."
 )
 
 RESPONSE_CONTENT_PART_TYPES = {"text", "input_text", "output_text", "image_url", "input_image", "image"}
@@ -267,17 +265,42 @@ def response_completed(
     return response
 
 
+def text_response_request(body: dict[str, Any]) -> tuple[str, PromptPlan]:
+    """构造文本链路（/v1/responses）的 `(model, 提示词事实源)`。
+
+    `input` 里的 `instructions` 作为请求级 system，与 global system 在
+    `build_prompt_plan` 内合并一次；不支持的本地工具追加兜底 system 文案。
+    缓存配置驱动的消息裁剪（`normalize_text_messages`）在构造前施加，
+    保持原有缓存指纹与去重语义。
+    """
+    model = str(body.get("model") or "auto").strip() or "auto"
+    messages = normalize_text_messages(messages_from_input(body.get("input"), body.get("instructions")))
+    plan = build_prompt_plan(
+        model=model,
+        messages=messages,
+        tool_unavailable=has_unsupported_response_tools(body),
+    )
+    return model, plan
+
+
 def text_response_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
-    model = str(body.get("model") or "auto").strip() or "auto"
-    messages = normalize_text_messages(normalize_messages(messages_from_input(body.get("input"), body.get("instructions"))))
-    if has_unsupported_response_tools(body):
-        messages.insert(0, {"role": "system", "content": TOOL_UNAVAILABLE_SYSTEM_MESSAGE})
-    return model, messages
+    """返回 `(model, 上游 messages)`；messages 中 system 只出现一次（global 已去重）。"""
+    model, plan = text_response_request(body)
+    return model, render_conversation_messages(plan)
 
 
-def stream_text_response(backend: OpenAIBackendAPI, body: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
+def stream_text_response(
+    backend: OpenAIBackendAPI,
+    body: dict[str, Any],
+    messages: list[dict[str, Any]] | None = None,
+    plan: PromptPlan | None = None,
+) -> Iterator[dict[str, Any]]:
+    """流式文本响应；`messages` 已是渲染好的上游数组，`plan` 供下游复用同一事实源。"""
     model = str(body.get("model") or "auto").strip() or "auto"
-    messages = messages if messages is not None else messages_from_input(body.get("input"), body.get("instructions"))
+    if messages is None:
+        model, fallback_plan = text_response_request(body)
+        plan = plan or fallback_plan
+        messages = render_conversation_messages(plan)
     thinking_effort = thinking_effort_from_body(body)
     response_id = f"resp_{uuid.uuid4().hex}"
     item_id = f"msg_{uuid.uuid4().hex}"
@@ -285,7 +308,7 @@ def stream_text_response(backend: OpenAIBackendAPI, body: dict[str, Any], messag
     full_text = ""
     yield response_created(response_id, model, created)
     yield {"type": "response.output_item.added", "output_index": 0, "item": text_output_item("", item_id, "in_progress")}
-    request = ConversationRequest(model=model, messages=messages, thinking_effort=thinking_effort)
+    request = ConversationRequest(model=model, messages=messages, thinking_effort=thinking_effort, plan=plan)
     for delta in stream_text_deltas(backend, request):
         full_text += delta
         yield {"type": "response.output_text.delta", "item_id": item_id, "output_index": 0, "content_index": 0, "delta": delta}
@@ -302,7 +325,9 @@ def stream_text_response(backend: OpenAIBackendAPI, body: dict[str, Any], messag
 
 def stream_web_search_response(body: dict[str, Any], messages: list[dict[str, Any]] | None = None) -> Iterator[dict[str, Any]]:
     model = str(body.get("model") or "auto").strip() or "auto"
-    messages = messages if messages is not None else messages_from_input(body.get("input"), body.get("instructions"))
+    if messages is None:
+        model, plan = text_response_request(body)
+        messages = render_conversation_messages(plan)
     query = search_query_from_messages(messages) or extract_response_prompt(body.get("input"))
     if not query:
         raise InvalidRequestError("input text is required for web_search")
@@ -391,14 +416,15 @@ def collect_response(events: Iterable[dict[str, Any]]) -> dict[str, Any]:
 
 def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
     if is_text_response_request(body):
-        model, messages = text_response_parts(body)
+        model, plan = text_response_request(body)
+        messages = render_conversation_messages(plan)
         if has_web_search_tool(body) and not has_unsupported_response_tools(body):
             yield from stream_web_search_response(body, messages)
             return
         key = cache_key(body, messages, stream=bool(body.get("stream")))
         yield from chat_completion_cache.get_or_compute_stream(
             key,
-            lambda: stream_text_response(text_backend(model), body, messages),
+            lambda: stream_text_response(text_backend(model), body, messages, plan),
         )
         return
 
@@ -414,16 +440,28 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         images = None
     input_image_tokens = count_image_content_tokens(_input_image_parts(body.get("input")), model)
     tool = response_image_tool(body)
+    size = tool.get("size")
+    quality = str(tool.get("quality") or "auto")
+    # 提示词事实源在请求路径内构造：尺寸/质量以中文文本注入 picture_v2 提示词。
+    plan = build_prompt_plan(
+        model=model,
+        prompt=prompt,
+        images=images,
+        size=size if isinstance(size, str) else None,
+        quality=quality,
+        size_enabled=True,
+    )
     image_outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
         model=model,
-        size=tool.get("size"),
-        quality=str(tool.get("quality") or "auto"),
+        size=size,
+        quality=quality,
         size_enabled=True,
         response_format="b64_json",
         images=images,
+        plan=plan,
     ))
-    yield from stream_image_response(image_outputs, prompt, model, input_image_tokens, tool.get("size"), str(tool.get("quality") or "auto"))
+    yield from stream_image_response(image_outputs, prompt, model, input_image_tokens, size, quality)
 
 
 def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:

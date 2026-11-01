@@ -39,6 +39,11 @@ from services.errors import (
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.event_parse import conversation_events
 from services.protocol.message_utils import ConversationRequest
+from services.protocol.prompt_plan import (
+    PromptPlan,
+    build_prompt_plan,
+    render_codex_instructions,
+)
 from utils.helper import (
     IMAGE_MODELS,
     codex_image_tool_model,
@@ -687,6 +692,26 @@ def _fallback_outputs(
                           conversation_id=conversation_id)
 
 
+def _request_plan(request: ConversationRequest) -> PromptPlan:
+    """取请求携带的提示词事实源；端点未构造时就地补建一次（幂等，不重复注入）。
+
+    图片链路的 `request.prompt` 是调用方原始输入，尺寸/质量文本由 `plan.prompt`
+    承载，因此这里把 `size_enabled` 一并传下去；`request.messages` 若已是渲染后的
+    上游数组，`build_prompt_plan` 会折叠其前置 system，不会二次注入。
+    """
+    if request.plan is not None:
+        return request.plan
+    return build_prompt_plan(
+        model=request.model,
+        messages=request.messages,
+        prompt=request.prompt,
+        images=request.images,
+        size=request.size,
+        quality=request.quality,
+        size_enabled=request.size_enabled,
+    )
+
+
 def stream_image_outputs(
         backend: OpenAIBackendAPI,
         request: ConversationRequest,
@@ -706,6 +731,7 @@ def stream_image_outputs(
     last: dict[str, Any] = {}
     for event in conversation_events(
             backend,
+            plan=_request_plan(request),
             prompt=request.prompt,
             model=request.model,
             images=request.images or [],
@@ -768,13 +794,20 @@ def stream_codex_image_outputs(
         index: int = 1,
         total: int = 1,
 ) -> Iterator[ImageOutput]:
-    """codex 生图流：直接消费 codex 响应事件并组装结果，无中间进度事件。"""
+    """codex 生图流：直接消费 codex 响应事件并组装结果，无中间进度事件。
+
+    codex 链路绕开 `conversation_events`，`global_system_prompt` 无处注入；
+    因此这里通过 `render_codex_instructions(plan)` 把它拼进 responses 的
+    `instructions` 字段，与文本/picture_v2 链路保持同一份提示词事实源。
+    """
+    plan = _request_plan(request)
     images = _codex_response_images(list(backend.iter_codex_image_response_events(
         prompt=request.prompt,
         images=request.images or [],
         size=request.size,
         quality=request.quality,
         image_model=codex_image_tool_model(request.model),
+        instructions=render_codex_instructions(plan),
     )))
     if not images:
         raise ImageGenerationError("No image result found in response")
