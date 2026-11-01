@@ -28,7 +28,7 @@
 | `log_levels` | string[] | `[]`（全部输出） | — | 启用的日志级别，可选 `debug`/`info`/`warning`/`error` |
 | `base_url` | string | `""` | — | 对外服务的基础 URL；可被环境变量 `CHATGPT2API_BASE_URL` 覆盖 |
 | `sensitive_words` | string[] | `[]` | — | 敏感词列表，命中后触发内容过滤 |
-| `global_system_prompt` | string | `""` | — | 注入到所有会话的全局 system prompt |
+| `global_system_prompt` | string | `""` | — | 全局附加指令：文本请求合并进首条 system 消息，生图请求拼进提示词，Codex 请求拼进 instructions |
 | `default_upstream_model_name` | string | `"gpt-6-thinking"` | — | 客户端未指定模型时使用的上游模型 |
 | `default_thinking_effort` | string | `"auto"` | — | 默认思考力度，可选 `auto`/`standard`/`extended`/`max` |
 

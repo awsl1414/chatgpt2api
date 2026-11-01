@@ -15,6 +15,7 @@ from typing import Any
 
 from services.backend.context import BackendClient
 from services.errors import CodexSourceAccountError
+from services.protocol.prompt_plan import CODEX_RESPONSES_INSTRUCTIONS
 from utils.helper import UpstreamHTTPError
 from utils.jwt import decode_jwt_payload
 from utils.log import logger
@@ -27,12 +28,6 @@ CODEX_IMAGE_TIMEOUT_SECS = 1200
 # 顶层模型：gpt-5.5 已被上游拒绝（400 model_not_found，2026-10-30 实测），
 # gpt-6-luna 为 Codex CLI 现行值、实测 200（逆向仓库 docs/api/codex-image.md §5）
 CODEX_RESPONSES_MODEL = "gpt-6-luna"
-
-
-CODEX_RESPONSES_INSTRUCTIONS = (
-    "Use the image_generation tool to create exactly one image for the user's request. "
-    "Return the generated image result."
-)
 
 
 

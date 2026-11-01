@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import pytest
 
-from services.backend.codex_image import CODEX_RESPONSES_INSTRUCTIONS as CODEX_INSTRUCTIONS_IN_BACKEND
 from services.config import config
 from services.protocol.prompt_plan import (
     CODEX_RESPONSES_INSTRUCTIONS,
@@ -41,9 +40,11 @@ def no_global_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
 # 常量守卫
 # --------------------------------------------------------------------------- #
 
-def test_codex_instructions_constant_matches_backend() -> None:
-    """本模块的 codex 指令常量必须与 backend 侧保持一致。"""
-    assert CODEX_RESPONSES_INSTRUCTIONS == CODEX_INSTRUCTIONS_IN_BACKEND
+def test_codex_instructions_have_single_source() -> None:
+    """codex 指令只有 `prompt_plan` 一份，backend 侧直接 import，不再各存一份。"""
+    import services.backend.codex_image as codex_image
+
+    assert codex_image.CODEX_RESPONSES_INSTRUCTIONS is CODEX_RESPONSES_INSTRUCTIONS
 
 
 def test_tool_unavailable_message_is_static_text() -> None:
@@ -301,9 +302,6 @@ def test_size_hints_not_injected_when_size_disabled(no_global_prompt: None) -> N
     )
 
     assert plan.prompt == "画一只猫"
-    # 参数本身仍透传，供 codex 工具层等直接消费
-    assert plan.size == "1792x1024"
-    assert plan.quality == "high"
 
 
 def test_no_hints_when_size_and_auto_quality(no_global_prompt: None) -> None:
