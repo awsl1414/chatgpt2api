@@ -13,6 +13,7 @@ from services.protocol.image_stream import (
     stream_image_outputs_with_pool,
 )
 from services.protocol.message_utils import ConversationRequest, count_text_tokens, encode_images
+from services.protocol.prompt_plan import build_prompt_plan, render_picture_prompt
 from utils.image_tokens import count_image_inputs_tokens, count_image_output_items_tokens, image_usage
 
 
@@ -62,8 +63,19 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     encoded_images = encode_images(images)
     if not encoded_images:
         raise ImageGenerationError("image is required")
+    # 提示词事实源在请求路径内构造（config 热更新即时生效）。
+    plan = build_prompt_plan(
+        model=model,
+        prompt=prompt,
+        images=encoded_images,
+        size=size,
+        quality=quality,
+        size_enabled=True,
+    )
     outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
+        # `revised_prompt` 反映实际发往上游的单段文本（含 global 与尺寸/质量提示）
+        final_prompt=render_picture_prompt(plan),
         model=model,
         n=n,
         size=size,
@@ -74,6 +86,7 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
         images=encoded_images,
         message_as_error=True,
         progress_callback=progress_callback,
+        plan=plan,
     ))
     if body.get("stream"):
         return stream_image_chunks(outputs)

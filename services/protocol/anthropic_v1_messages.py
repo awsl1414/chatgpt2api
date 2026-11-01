@@ -12,8 +12,9 @@ from typing import Any
 
 from services.account_service import account_service
 from services.openai_backend_api import OpenAIBackendAPI
-from services.protocol.message_utils import count_message_tokens, count_text_tokens, normalize_messages
+from services.protocol.message_utils import count_message_tokens, count_text_tokens
 from services.protocol.openai_v1_chat_complete import collect_chat_content, stream_text_chat_completion
+from services.protocol.prompt_plan import PromptPlan, build_prompt_plan, render_conversation_messages
 
 XML_TOOL_RULE = """Tool output adapter: when calling tools, output ONLY this XML and no prose/markdown:
 <tool_calls><tool_call><tool_name>TOOL_NAME</tool_name><parameters><PARAM><![CDATA[value]]></PARAM></parameters></tool_call></tool_calls>"""
@@ -25,6 +26,8 @@ class MessageRequest:
     messages: list[dict[str, Any]]
     model: str
     tools: Any = None
+    # 提示词事实源：端点层在请求路径内构造一次，下游复用同一份渲染结果。
+    plan: PromptPlan | None = None
 
 
 def _tool_meta(tool: dict[str, object]) -> tuple[str, str, object]:
@@ -109,16 +112,30 @@ def preprocess_payload(payload: dict[str, object], text_mapper: Callable[[str], 
 
 
 def message_request(body: dict[str, Any]) -> MessageRequest:
+    """解析 Anthropic 请求并构造 `MessageRequest`。
+
+    提示词事实源 `plan` 在此构造一次：global system、请求级 `system`（含
+    `preprocess_payload` 合并进来的工具规则）在 `build_prompt_plan` 内合并去重。
+    图片模型分支不再把空 `prompt` 发往上游——`plan.prompt` 从 messages 的 user
+    文本派生，纯图片请求回退到固定指令；`plan.images` 从 messages 的图片分段
+    提取，因此 Anthropic 的图生图请求不会丢图。
+    """
     payload = preprocess_payload(dict(body))
     model = str(payload.get("model") or "auto").strip() or "auto"
+    plan = build_prompt_plan(
+        model=model,
+        messages=payload.get("messages") if isinstance(payload.get("messages"), list) else None,
+        system=payload.get("system"),
+    )
     return MessageRequest(
         backend=OpenAIBackendAPI(
             access_token=account_service.get_text_access_token(model=model),
             account_reader=account_service,
         ),
-        messages=normalize_messages(payload.get("messages"), payload.get("system")),
+        messages=render_conversation_messages(plan),
         model=model,
         tools=payload.get("tools"),
+        plan=plan,
     )
 
 
@@ -295,13 +312,15 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     request = message_request(body)
     if body.get("stream"):
         return stream_events(
-            stream_text_chat_completion(request.backend, request.messages, request.model),
+            stream_text_chat_completion(request.backend, request.messages, request.model, plan=request.plan),
             request.model,
             count_message_tokens(request.messages, request.model),
             lambda text: count_text_tokens(text, request.model),
             request.tools,
         )
-    text = collect_chat_content(stream_text_chat_completion(request.backend, request.messages, request.model))
+    text = collect_chat_content(
+        stream_text_chat_completion(request.backend, request.messages, request.model, plan=request.plan)
+    )
     return message_response(
         request.model,
         text,

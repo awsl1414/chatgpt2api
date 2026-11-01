@@ -39,6 +39,12 @@ from services.errors import (
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.event_parse import conversation_events
 from services.protocol.message_utils import ConversationRequest
+from services.protocol.prompt_plan import (
+    PromptPlan,
+    build_prompt_plan,
+    render_codex_instructions,
+    render_picture_prompt,
+)
 from utils.helper import (
     IMAGE_MODELS,
     codex_image_tool_model,
@@ -373,7 +379,7 @@ def _build_image_result(
     ]
     data = format_image_result(
         image_items,
-        request.prompt,
+        _revised_prompt(request),
         request.response_format,
         request.base_url,
         int(time.time()),
@@ -687,6 +693,41 @@ def _fallback_outputs(
                           conversation_id=conversation_id)
 
 
+def _request_plan(request: ConversationRequest) -> PromptPlan:
+    """取请求携带的提示词事实源；端点未构造时就地补建一次（幂等，不重复注入）。
+
+    图片链路的 `request.prompt` 是调用方原始输入，尺寸/质量文本由 `plan.prompt`
+    承载，因此这里把 `size_enabled` 一并传下去；`request.messages` 若已是渲染后的
+    上游数组，`build_prompt_plan` 会折叠其前置 system，不会二次注入。
+    """
+    if request.plan is not None:
+        return request.plan
+    return build_prompt_plan(
+        model=request.model,
+        messages=request.messages,
+        prompt=request.prompt,
+        images=request.images,
+        size=request.size,
+        quality=request.quality,
+        size_enabled=request.size_enabled,
+    )
+
+
+def _revised_prompt(request: ConversationRequest) -> str:
+    """取用于 `revised_prompt` 的文本：实际发往上游的单段提示词。
+
+    图片端点已把 `render_picture_prompt(plan)` 写入 `request.final_prompt`
+    （含 global 与尺寸/质量提示），这里直接用它；未写入时回退到 `plan` 渲染结果，
+    再回退到原始 `request.prompt`。
+    注意：会话恢复检索不走这里，它必须继续用原始 `request.prompt`。
+    """
+    if request.final_prompt:
+        return request.final_prompt
+    if request.plan is not None:
+        return render_picture_prompt(request.plan) or request.prompt
+    return request.prompt
+
+
 def stream_image_outputs(
         backend: OpenAIBackendAPI,
         request: ConversationRequest,
@@ -706,6 +747,7 @@ def stream_image_outputs(
     last: dict[str, Any] = {}
     for event in conversation_events(
             backend,
+            plan=_request_plan(request),
             prompt=request.prompt,
             model=request.model,
             images=request.images or [],
@@ -768,19 +810,27 @@ def stream_codex_image_outputs(
         index: int = 1,
         total: int = 1,
 ) -> Iterator[ImageOutput]:
-    """codex 生图流：直接消费 codex 响应事件并组装结果，无中间进度事件。"""
+    """codex 生图流：直接消费 codex 响应事件并组装结果，无中间进度事件。
+
+    codex 链路绕开 `conversation_events`，`global_system_prompt` 无处注入；
+    因此这里通过 `render_codex_instructions(plan)` 把它拼进 responses 的
+    `instructions` 字段，与文本/picture_v2 链路保持同一份提示词事实源。
+    """
+    plan = _request_plan(request)
     images = _codex_response_images(list(backend.iter_codex_image_response_events(
         prompt=request.prompt,
         images=request.images or [],
         size=request.size,
         quality=request.quality,
         image_model=codex_image_tool_model(request.model),
+        instructions=render_codex_instructions(plan),
     )))
     if not images:
         raise ImageGenerationError("No image result found in response")
+    revised_prompt = _revised_prompt(request)
     data = format_image_result(
-        [{"b64_json": item, "revised_prompt": request.prompt} for item in images],
-        request.prompt,
+        [{"b64_json": item, "revised_prompt": revised_prompt} for item in images],
+        revised_prompt,
         request.response_format,
         request.base_url,
         int(time.time()),

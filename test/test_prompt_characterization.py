@@ -3,14 +3,14 @@
 
 这三处当前**零测试覆盖**，重构前先把「现在真实是什么样」固化下来：
 
-- `message_utils.normalize_messages`：global system 前置、以及**非幂等**（调用两次会
-  注入两次）这一已知缺陷；
+- `message_utils.normalize_messages`：global system 前置、以及重复调用不重复注入；
 - `message_utils.prompt_with_global_system`：`f"{global}\\n\\n{prompt}"` 的拼接格式；
 - `anthropic_v1_messages.build_tool_prompt` / `merge_system` / `XML_TOOL_RULE`。
 
-本文件的断言描述的是**当前行为**，不是理想行为。若重构后这里的用例失败，
-说明行为发生漂移，必须先判断漂移是否符合预期再更新断言——**不要**为了让测试变绿
-而改写它们（尤其 `test_normalize_messages_is_not_idempotent`）。
+本文件的断言描述的是**当前行为**。若重构后这里的用例失败，说明行为发生漂移，
+必须先判断漂移是否符合预期再更新断言——**不要**为了让测试变绿而改写它们。
+阶段 2 修重复注入时，`test_normalize_messages_is_idempotent` 由「非幂等」改为
+断言幂等，这是计划内的预期变更。
 """
 from __future__ import annotations
 
@@ -98,18 +98,19 @@ def test_normalize_messages_extracts_image_parts(no_global_prompt: None) -> None
     assert content[1]["mime"] == "image/png"
 
 
-def test_normalize_messages_is_not_idempotent(global_prompt: str) -> None:
-    """已知缺陷（阶段 1 如实固化）：重复调用会把 global system 注入多次。
+def test_normalize_messages_is_idempotent(global_prompt: str) -> None:
+    """阶段 2 修复后的行为：重复调用不会把 global system 注入多次。
 
-    端点层与 `event_parse.conversation_events` 各调一次 `normalize_messages`，
-    于是文本链路每次请求实际注入 2 次。阶段 2 修复后本用例应改为断言幂等。
+    修复前端点层与 `event_parse.conversation_events` 各调一次
+    `normalize_messages`，文本链路每次请求实际注入 2 次；现在注入点收敛到
+    `prompt_plan.build_prompt_plan` 一处，且 `normalize_messages` 自身带幂等保护。
     """
     once = normalize_messages([{"role": "user", "content": "你好"}])
     twice = normalize_messages(once)
 
     system_messages = [message for message in twice if message["role"] == "system"]
-    assert len(system_messages) == 2
-    assert system_messages == [{"role": "system", "content": global_prompt}] * 2
+    assert len(system_messages) == 1
+    assert system_messages == [{"role": "system", "content": global_prompt}]
 
 
 def test_normalize_messages_ignores_non_list_input(global_prompt: str) -> None:

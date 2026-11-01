@@ -2,7 +2,7 @@
 """`services.protocol.prompt_plan` 的单元测试。
 
 覆盖 `build_prompt_plan` 的策略决策（system 合并去重、空 prompt 派生、尺寸/质量
-注入、hints 默认值、auto 短路）与三个 renderer 的形态转换。阶段 1 尚无调用点，
+注入、hints 默认值、auto 短路）与三个 renderer 的形态转换。所有端点均已迁移到此，
 这些用例即该模块的行为契约。
 """
 from __future__ import annotations
@@ -15,7 +15,6 @@ from services.protocol.prompt_plan import (
     CODEX_RESPONSES_INSTRUCTIONS,
     PICTURE_V2_HINT,
     TOOL_UNAVAILABLE_SYSTEM_MESSAGE,
-    PromptPlan,
     build_prompt_plan,
     render_codex_instructions,
     render_conversation_messages,
@@ -43,7 +42,7 @@ def no_global_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
 # --------------------------------------------------------------------------- #
 
 def test_codex_instructions_constant_matches_backend() -> None:
-    """本模块的 codex 指令常量必须与 backend 侧保持一致（阶段 2 会收敛为单一来源）。"""
+    """本模块的 codex 指令常量必须与 backend 侧保持一致。"""
     assert CODEX_RESPONSES_INSTRUCTIONS == CODEX_INSTRUCTIONS_IN_BACKEND
 
 
@@ -53,15 +52,15 @@ def test_tool_unavailable_message_is_static_text() -> None:
     assert "{global" not in TOOL_UNAVAILABLE_SYSTEM_MESSAGE
 
 
-def test_tool_unavailable_message_matches_endpoint_copies() -> None:
-    """阶段 1 新旧并存：端点文件里的副本必须与本模块常量逐字一致。
+def test_tool_unavailable_message_single_source() -> None:
+    """端点文件里的逐字副本已删除，`prompt_plan` 是唯一来源。
 
-    阶段 2 删除端点副本后，本用例一并删除。
+    端点模块不再定义同名常量（避免两处并存导致再次漂移）。
     """
     from services.protocol import openai_v1_chat_complete, openai_v1_response
 
-    assert openai_v1_chat_complete.TOOL_UNAVAILABLE_SYSTEM_MESSAGE == TOOL_UNAVAILABLE_SYSTEM_MESSAGE
-    assert openai_v1_response.TOOL_UNAVAILABLE_SYSTEM_MESSAGE == TOOL_UNAVAILABLE_SYSTEM_MESSAGE
+    assert not hasattr(openai_v1_chat_complete, "TOOL_UNAVAILABLE_SYSTEM_MESSAGE")
+    assert not hasattr(openai_v1_response, "TOOL_UNAVAILABLE_SYSTEM_MESSAGE")
 
 
 def test_prompt_plan_module_has_no_protocol_package_imports() -> None:
@@ -141,6 +140,53 @@ def test_build_prompt_plan_is_idempotent_for_system(global_prompt: str) -> None:
     assert second.system == first.system == global_prompt
     assert second.messages == first.messages
     assert len([m for m in render_conversation_messages(second) if m["role"] == "system"]) == 1
+
+
+def test_build_prompt_plan_is_idempotent_with_multi_part_system(monkeypatch: pytest.MonkeyPatch) -> None:
+    """global 自身含空行、且带请求级 system 与兜底文案时，仍不重复注入。
+
+    不能按空行拆分比较已注入的 system——global 自己就可能有多段。
+    """
+    multi_part_global = "第一段\n\n第二段"
+    monkeypatch.setattr(config, "data", {**config.data, "global_system_prompt": multi_part_global})
+
+    first = build_prompt_plan(
+        model="gpt-5-5",
+        messages=[{"role": "user", "content": "你好"}],
+        system="请求级",
+        tool_unavailable=True,
+    )
+    second = build_prompt_plan(
+        model="gpt-5-5",
+        messages=render_conversation_messages(first),
+        system="请求级",
+        tool_unavailable=True,
+    )
+
+    assert second.system == first.system
+    assert second.system.count(multi_part_global) == 1
+
+
+def test_caller_supplied_system_message_is_preserved(global_prompt: str) -> None:
+    """调用方自带的 system 消息不被当成重复注入丢弃。"""
+    plan = build_prompt_plan(
+        model="gpt-5-5",
+        messages=[{"role": "system", "content": "调用方自带"}, {"role": "user", "content": "你好"}],
+    )
+
+    assert plan.system == f"{global_prompt}\n\n调用方自带"
+    assert plan.messages == [{"role": "user", "content": "你好"}]
+
+
+def test_caller_system_containing_global_is_not_rewritten(global_prompt: str) -> None:
+    """调用方 system 里恰好含 global 文本时，不重排、不误删（与旧实现一致）。"""
+    plan = build_prompt_plan(
+        model="gpt-5-5",
+        messages=[{"role": "system", "content": f"前言\n\n{global_prompt}"}, {"role": "user", "content": "你好"}],
+    )
+
+    assert plan.system == f"{global_prompt}\n\n前言\n\n{global_prompt}"
+    assert plan.messages == [{"role": "user", "content": "你好"}]
 
 
 def test_render_conversation_messages_puts_system_first_once(global_prompt: str) -> None:

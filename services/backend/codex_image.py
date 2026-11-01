@@ -216,14 +216,21 @@ def iter_codex_image_response_events(
         size: str | None = None,
         quality: str = "auto",
         image_model: str = "gpt-image-2",
+        instructions: str = CODEX_RESPONSES_INSTRUCTIONS,
 ) -> Iterator[dict[str, Any]]:
+    """向 codex responses 端点发起一次生图请求并产出 SSE 事件。
+
+    `instructions` 默认为固定英文常量；协议层通过
+    `prompt_plan.render_codex_instructions(plan)` 传入「global system + 常量」，
+    使 codex 链路也能读到管理端配置的 global_system_prompt。
+    """
     if not api.access_token:
         raise RuntimeError("access_token is required for codex image endpoints")
     ensure_codex_source_account(api, )
     path = "/backend-api/codex/responses"
     payload = {
         "model": CODEX_RESPONSES_MODEL,
-        "instructions": CODEX_RESPONSES_INSTRUCTIONS,
+        "instructions": instructions or CODEX_RESPONSES_INSTRUCTIONS,
         "store": False,
         "input": codex_image_input(prompt, images or []),
         "tools": [{

@@ -45,6 +45,7 @@ from services.protocol.image_stream import (
     stream_codex_image_outputs,
 )
 from services.protocol.message_utils import ConversationRequest
+from services.protocol.prompt_plan import build_prompt_plan, render_picture_prompt
 
 REAL_FILE_ID = "file_00000000" + "a" * 24
 PNG_B64 = base64.b64encode(b"fake-png-bytes").decode("ascii")
@@ -221,6 +222,57 @@ def test_stream_image_outputs_success_with_sse_file_ids(monkeypatch):
     assert data["revised_prompt"] == "a cat"
     assert backend.resolve_calls == [("conv-1", [REAL_FILE_ID], [], True)]
     assert "receiving_image" in progress_steps
+
+
+def test_stream_image_outputs_revised_prompt_uses_final_prompt(monkeypatch):
+    """`revised_prompt` 反映实际发往上游的文本（含尺寸/质量与 global），而非原始输入。"""
+    backend = FakeBackend(urls=["https://cdn/a.png"])
+    events = [
+        {"type": "conversation.event", "conversation_id": "conv-1",
+         "file_ids": [REAL_FILE_ID], "sediment_ids": [], "text": ""},
+    ]
+    monkeypatch.setattr(image_stream_module, "conversation_events", lambda backend_arg, **kwargs: iter(events))
+    monkeypatch.setattr(image_stream_module, "_get_detailed_error_from_tasks", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        image_stream_module.config, "data",
+        {**image_stream_module.config.data, "global_system_prompt": "GLOBAL"},
+    )
+
+    plan = build_prompt_plan(
+        model="gpt-image-2", prompt="a cat", size="1792x1024", quality="high", size_enabled=True,
+    )
+    final_prompt = render_picture_prompt(plan)
+    request = make_request(
+        size="1792x1024", quality="high", size_enabled=True, plan=plan, final_prompt=final_prompt,
+    )
+    outputs = list(stream_image_outputs(backend, request))
+
+    revised = outputs[-1].data[0]["revised_prompt"]
+    assert revised == final_prompt
+    assert "GLOBAL" in revised
+    assert "输出图片尺寸为 1792x1024。" in revised
+    assert "输出图片质量为 high。" in revised
+    # 会话恢复检索仍用原始 prompt（不含尺寸句与 global）
+    assert request.prompt == "a cat"
+
+
+def test_stream_codex_image_outputs_revised_prompt_uses_final_prompt():
+    """codex 链路的 `revised_prompt` 取实际发送文本。
+
+    codex 的 global system 走 `instructions` 而非 prompt，因此这里的
+    `revised_prompt` 不含 global（与上游实际收到的 `input` 文本一致）。
+    """
+    class CodexBackend:
+        def iter_codex_image_response_events(self, **kwargs):
+            yield {"type": "image_generation_call", "result": PNG_B64}
+
+    plan = build_prompt_plan(model="codex-gpt-image-2", prompt="a cat")
+    request = make_request(model="codex-gpt-image-2", plan=plan)
+    outputs = list(stream_codex_image_outputs(CodexBackend(), request))
+
+    assert outputs[0].data[0]["revised_prompt"] == plan.prompt == "a cat"
+    assert request.prompt == "a cat"
+
 
 
 def test_stream_image_outputs_plain_text_message_passthrough(monkeypatch):

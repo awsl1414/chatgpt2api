@@ -3,7 +3,9 @@
 把 ChatGPT 上游 `/backend-api/conversation` 的 SSE 载荷解析为统一的
 conversation.* 事件流（done / raw / event / delta），并维护会话状态
 （conversation_id、file_ids、sediment_ids、blocked、tool_invoked 等）。
-本模块只依赖 `message_utils` 与 `services.openai_backend_api`（类型），
+提示词组装统一走 `prompt_plan`（单一事实源），本模块只消费其渲染结果，
+不再自行拼接 global system 或尺寸/质量文本。
+本模块依赖 `message_utils`、`prompt_plan` 与 `services.openai_backend_api`（类型），
 不得反向依赖 protocol 包内其他模块。
 """
 from __future__ import annotations
@@ -17,9 +19,13 @@ from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.message_utils import (
     assistant_history_messages,
     assistant_history_text,
-    build_image_prompt,
-    normalize_messages,
-    prompt_with_global_system,
+)
+from services.protocol.prompt_plan import (
+    PICTURE_V2_HINT,
+    PromptPlan,
+    build_prompt_plan,
+    render_conversation_messages,
+    render_picture_prompt,
 )
 from utils.helper import is_supported_image_model
 from utils.collection import add_unique
@@ -376,27 +382,42 @@ def conversation_events(
     quality: str = "auto",
     thinking_effort: str = "",
     size_enabled: bool = False,
+    plan: PromptPlan | None = None,
 ) -> Iterator[dict[str, Any]]:
     """发起一次上游对话并把 SSE 流解析为 conversation.* 事件流。
 
     图片模型走 picture_v2 系统提示并附带图片输入；文本模型保留历史回放
     用于在事件流中剔除上游重复输出。
+
+    `plan` 由端点层通过 `build_prompt_plan` 在请求路径内构造，是提示词的唯一
+    事实源；缺省时在此就地构造（对已渲染过的 messages 幂等，不会二次注入
+    global system）。图片链路只消费压平后的 `prompt`，文本链路消费
+    `messages` 数组。
     """
-    normalized = normalize_messages(messages or ([{"role": "user", "content": prompt}] if prompt else []))
+    if plan is None:
+        plan = build_prompt_plan(
+            model=model,
+            messages=messages,
+            prompt=prompt,
+            images=images,
+            size=size,
+            quality=quality,
+            size_enabled=size_enabled,
+        )
     image_model = is_supported_image_model(model)
-    history_text = "" if image_model else assistant_history_text(normalized)
-    history_messages = [] if image_model else assistant_history_messages(normalized)
-    if image_model:
-        hinted_prompt = build_image_prompt(prompt, size, quality) if size_enabled else prompt
-        final_prompt = prompt_with_global_system(hinted_prompt)
-    else:
-        final_prompt = prompt
+    history_text = "" if image_model else assistant_history_text(plan.messages)
+    history_messages = [] if image_model else assistant_history_messages(plan.messages)
+    # 图片链路的 system hint 以 `plan.hints` 为准；picture_v2 是必要条件，
+    # 因此显式传空 hints 时仍回退到它，避免上游按文本对话处理、永远拿不到图。
+    system_hints = (plan.hints or [PICTURE_V2_HINT]) if image_model else None
     payloads = backend.stream_conversation(
-        messages=normalized,
+        messages=render_conversation_messages(plan),
         model=model,
-        prompt=final_prompt,
-        images=images if image_model else None,
-        system_hints=["picture_v2"] if image_model else None,
+        # 图片链路只认压平后的单段 prompt（system 也拼进去）；文本链路仍用调用方
+        # 传入的原始 prompt，`messages` 才是它的真实来源，保持既有语义不变。
+        prompt=render_picture_prompt(plan) if image_model else prompt,
+        images=(images or plan.images) if image_model else None,
+        system_hints=system_hints,
         thinking_effort=thinking_effort if not image_model else "",
     )
     yield from iter_conversation_payloads(payloads, history_text, history_messages)
