@@ -22,7 +22,7 @@ from services.config import config
 from services.errors import ImageContentPolicyError, ImagePollTimeoutError
 from utils.helper import UpstreamHTTPError, ensure_ok
 from utils.log import logger
-from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, QUICK_QUERY_TIMEOUT_SECS
 
 FILE_SERVICE_ID_RE = re.compile(r"file-service://([A-Za-z0-9_-]+)")# 真正的图片文件 ID 格式：file_00000000 + 24位十六进制字符（共32字符）
 REAL_IMAGE_FILE_ID_RE = re.compile(r"\bfile_00000000[a-f0-9]{24}\b")
@@ -30,6 +30,10 @@ SEDIMENT_ID_RE = re.compile(r"sediment://([A-Za-z0-9_-]+)")
 
 # 生成结果图片下载超时
 IMAGE_DOWNLOAD_TIMEOUT_SECS = 120
+# 图片轮询的默认总预算（秒），与 config 的 image_poll_timeout_secs 默认值一致
+IMAGE_POLL_TIMEOUT_SECS = 120.0
+# /backend-api/tasks 查询的默认请求超时（秒）
+TASKS_QUERY_TIMEOUT_SECS = 30.0
 
 # 内容政策违规错误关键词（上游拒绝生成图片的各种表述）
 _CONTENT_POLICY_KEYWORDS = (
@@ -147,7 +151,7 @@ def find_content_policy_error_in_conversation(data: dict[str, Any]) -> str:
 def poll_image_results(
         api: BackendClient,
         conversation_id: str,
-        timeout_secs: float = 120.0,
+        timeout_secs: float = IMAGE_POLL_TIMEOUT_SECS,
         initial_file_ids: list[str] | None = None,
         initial_sediment_ids: list[str] | None = None,
 ) -> tuple[list[str], list[str]]:
@@ -228,7 +232,7 @@ def poll_image_results(
         # 内容政策违规检测通过对话文本进行（在 find_content_policy_error_in_conversation 中）
         last_task_error = ""
         try:
-            tasks = query_backend_tasks(api, conversation_id=conversation_id, timeout_secs=5.0)
+            tasks = query_backend_tasks(api, conversation_id=conversation_id, timeout_secs=QUICK_QUERY_TIMEOUT_SECS)
             for task in tasks:
                 is_error, error_msg, metadata = check_task_error(task)
                 if is_error and error_msg:
@@ -358,7 +362,7 @@ def query_backend_tasks(
     api: BackendClient,
     conversation_id: str = "",
     task_id: str = "",
-    timeout_secs: float = 30.0,
+    timeout_secs: float = TASKS_QUERY_TIMEOUT_SECS,
 ) -> list[dict[str, Any]]:
     """查询 /backend-api/tasks/ 接口获取异步任务状态和错误信息。
 

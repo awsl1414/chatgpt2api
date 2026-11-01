@@ -22,7 +22,7 @@ from PIL import Image
 from services.backend.context import BackendClient
 from services.backend.search import SEARCH_CONVERSATION_ID_RE, walk_dicts
 from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid
-from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, LONG_REQUEST_TIMEOUT_SECS
+from utils.limits import BLOB_UPLOAD_TIMEOUT_SECS, DEFAULT_REQUEST_TIMEOUT_SECS, LONG_REQUEST_TIMEOUT_SECS
 
 
 EDITABLE_FILE_MODEL = "gpt-5-5-thinking"
@@ -31,8 +31,6 @@ EDITABLE_FILE_TIMEOUT_SECS = 1200.0
 EDITABLE_FILE_POLL_INTERVAL_SECS = 5.0
 EDITABLE_FILE_CLIENT_VERSION = "prod-bede35f9dcd856d080e012478f0c1031faa2588e"
 EDITABLE_FILE_CLIENT_BUILD_NUMBER = "6631702"
-# Azure Blob 直传图片二进制数据超时
-BLOB_UPLOAD_TIMEOUT_SECS = 120
 
 EDITABLE_FILE_PSD_OUTPUT_DIR = "data/files/psd"
 EDITABLE_FILE_PPT_OUTPUT_DIR = "data/files/ppt"
