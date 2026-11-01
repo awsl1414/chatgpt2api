@@ -17,7 +17,8 @@ from services.protocol import (
 )
 from services.protocol.event_parse import conversation_events
 from services.protocol.image_stream import ImageOutput
-from services.protocol.message_utils import ConversationRequest, build_image_prompt
+from services.protocol.message_utils import ConversationRequest
+from services.protocol.prompt_plan import build_prompt_plan
 
 
 def result_image_output(model: str) -> ImageOutput:
@@ -31,15 +32,29 @@ def result_image_output(model: str) -> ImageOutput:
 
 
 class BuildImagePromptTests(unittest.TestCase):
+    """原 `message_utils.build_image_prompt` 的行为，现由 `build_prompt_plan` 承担。"""
+
     def test_appends_size_and_quality_hints(self) -> None:
-        prompt = build_image_prompt("画一只猫", "1792x1024", "high")
-        self.assertIn("画一只猫", prompt)
-        self.assertIn("输出图片尺寸为 1792x1024。", prompt)
-        self.assertIn("输出图片质量为 high。", prompt)
+        plan = build_prompt_plan(
+            model="gpt-image-2",
+            prompt="画一只猫",
+            size="1792x1024",
+            quality="high",
+            size_enabled=True,
+        )
+        self.assertIn("画一只猫", plan.prompt)
+        self.assertIn("输出图片尺寸为 1792x1024。", plan.prompt)
+        self.assertIn("输出图片质量为 high。", plan.prompt)
 
     def test_keeps_prompt_without_size(self) -> None:
-        prompt = build_image_prompt("画一只猫", None, "auto")
-        self.assertNotIn("输出图片尺寸", prompt)
+        plan = build_prompt_plan(
+            model="gpt-image-2",
+            prompt="画一只猫",
+            size=None,
+            quality="auto",
+            size_enabled=True,
+        )
+        self.assertNotIn("输出图片尺寸", plan.prompt)
 
 
 class ConversationEventsSizeGatingTests(unittest.TestCase):

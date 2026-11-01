@@ -290,7 +290,7 @@ export function ConfigCard() {
               placeholder="例如：先判断用户提示词是否合规；遇到违法、色情、暴力、仇恨等请求时拒绝回答。"
               className="min-h-28 rounded-xl border-stone-200 bg-white font-mono text-xs shadow-none"
             />
-            <p className="text-xs text-stone-500">每次请求都会作为 system 消息注入，可用于审核用户提示词、避免违规内容、统一约束模型行为或固定角色设定。</p>
+            <p className="text-xs text-stone-500">每次请求都会携带：文本请求合并为一条 system 消息，生图请求拼进提示词，Codex 请求拼进 instructions。可用于审核用户提示词、避免违规内容、统一约束模型行为或固定角色设定。</p>
           </div>
           <div className="space-y-2 md:col-span-2">
             <label className="text-sm text-stone-700">敏感词</label>

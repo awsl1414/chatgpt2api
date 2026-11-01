@@ -3,16 +3,22 @@
 
 这三处当前**零测试覆盖**，重构前先把「现在真实是什么样」固化下来：
 
-- `message_utils.normalize_messages`：global system 前置、以及重复调用不重复注入；
-- `message_utils.prompt_with_global_system`：`f"{global}\\n\\n{prompt}"` 的拼接格式；
+- 文本链路 system 组装（原 `message_utils.normalize_messages`，阶段 3 已删除，
+  现由 `prompt_plan.build_prompt_plan` + `render_conversation_messages` 承担）：
+  global system 前置、重复调用不重复注入；
+- 图片链路 prompt 拼接（原 `message_utils.prompt_with_global_system`，阶段 3 已删除，
+  现由 `build_prompt_plan` + `render_picture_prompt` 承担）：`f"{global}\\n\\n{prompt}"`；
 - `anthropic_v1_messages.build_tool_prompt` / `merge_system` / `XML_TOOL_RULE`。
 
 本文件的断言描述的是**当前行为**。若重构后这里的用例失败，说明行为发生漂移，
 必须先判断漂移是否符合预期再更新断言——**不要**为了让测试变绿而改写它们。
 阶段 2 修重复注入时，`test_normalize_messages_is_idempotent` 由「非幂等」改为
-断言幂等，这是计划内的预期变更。
+断言幂等，这是计划内的预期变更；阶段 3 删除旧函数后，这些用例改为直接断言
+新链路的等价行为。
 """
 from __future__ import annotations
+
+from typing import Any
 
 import pytest
 
@@ -22,7 +28,11 @@ from services.protocol.anthropic_v1_messages import (
     build_tool_prompt,
     merge_system,
 )
-from services.protocol.message_utils import normalize_messages, prompt_with_global_system
+from services.protocol.prompt_plan import (
+    build_prompt_plan,
+    render_conversation_messages,
+    render_picture_prompt,
+)
 
 GLOBAL_PROMPT = "全局系统提示：始终用中文回答。"
 
@@ -40,57 +50,65 @@ def no_global_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "data", {**config.data, "global_system_prompt": ""})
 
 
+def _render_text_messages(messages: Any, system: Any = None) -> list[dict]:
+    """走文本链路：构造 plan 并渲染成上游 messages。"""
+    plan = build_prompt_plan(model="auto", messages=messages, system=system)
+    return render_conversation_messages(plan)
+
+
 # --------------------------------------------------------------------------- #
-# normalize_messages
+# 文本链路 system 组装（原 normalize_messages）
 # --------------------------------------------------------------------------- #
 
-def test_normalize_messages_prepends_global_system(global_prompt: str) -> None:
+def test_text_messages_prepend_global_system(global_prompt: str) -> None:
     """配置了 global_system_prompt 时，首条是 global system 消息。"""
-    normalized = normalize_messages([{"role": "user", "content": "你好"}])
+    messages = _render_text_messages([{"role": "user", "content": "你好"}])
 
-    assert normalized[0] == {"role": "system", "content": global_prompt}
-    assert normalized[1] == {"role": "user", "content": "你好"}
-
-
-def test_normalize_messages_puts_request_system_after_global(global_prompt: str) -> None:
-    """请求级 system 作为第二条 system 消息，排在 global 之后（两条并存，不合并）。"""
-    normalized = normalize_messages([{"role": "user", "content": "你好"}], "请求级系统提示")
-
-    assert normalized[0] == {"role": "system", "content": global_prompt}
-    assert normalized[1] == {"role": "system", "content": "请求级系统提示"}
-    assert normalized[2] == {"role": "user", "content": "你好"}
+    assert messages[0] == {"role": "system", "content": global_prompt}
+    assert messages[1] == {"role": "user", "content": "你好"}
 
 
-def test_normalize_messages_without_global_keeps_messages_unchanged(no_global_prompt: None) -> None:
+def test_text_messages_merge_request_system_after_global(global_prompt: str) -> None:
+    """请求级 system 与 global 合并进**一条** system 消息，global 在前。"""
+    messages = _render_text_messages([{"role": "user", "content": "你好"}], "请求级系统提示")
+
+    system_messages = [message for message in messages if message["role"] == "system"]
+    assert system_messages == [{"role": "system", "content": f"{global_prompt}\n\n请求级系统提示"}]
+
+
+def test_text_messages_without_global_keep_messages_unchanged(no_global_prompt: None) -> None:
     """没有 global system 且没传 system 时，只做消息结构规范化，不加任何 system。"""
-    normalized = normalize_messages([{"role": "user", "content": "你好"}])
+    messages = _render_text_messages([{"role": "user", "content": "你好"}])
 
-    assert normalized == [{"role": "user", "content": "你好"}]
+    assert messages == [{"role": "user", "content": "你好"}]
 
 
-def test_normalize_messages_accepts_segmented_system(no_global_prompt: None) -> None:
+def test_text_messages_accept_segmented_system(no_global_prompt: None) -> None:
     """分段形式的请求级 system 会被压成纯文本后作为 system 消息。"""
-    normalized = normalize_messages(
+    messages = _render_text_messages(
         [{"role": "user", "content": "你好"}],
         [{"type": "text", "text": "第一段"}, {"type": "text", "text": "第二段"}],
     )
 
-    assert normalized[0] == {"role": "system", "content": "第一段第二段"}
+    assert messages[0] == {"role": "system", "content": "第一段第二段"}
 
 
-def test_normalize_messages_extracts_image_parts(no_global_prompt: None) -> None:
+def test_text_messages_extract_image_parts(no_global_prompt: None) -> None:
     """user 消息里的 base64 图片分段被抽成 `{"type": "image", ...}`，与文本分段并存。"""
-    normalized = normalize_messages([
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "这是什么"},
-                {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGVsbG8="}},
-            ],
-        },
-    ])
+    plan = build_prompt_plan(
+        model="auto",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "这是什么"},
+                    {"type": "image_url", "image_url": {"url": "data:image/png;base64,aGVsbG8="}},
+                ],
+            },
+        ],
+    )
 
-    content = normalized[0]["content"]
+    content = plan.messages[0]["content"]
     assert isinstance(content, list)
     assert content[0] == {"type": "text", "text": "这是什么"}
     assert content[1]["type"] == "image"
@@ -98,56 +116,64 @@ def test_normalize_messages_extracts_image_parts(no_global_prompt: None) -> None
     assert content[1]["mime"] == "image/png"
 
 
-def test_normalize_messages_is_idempotent(global_prompt: str) -> None:
-    """阶段 2 修复后的行为：重复调用不会把 global system 注入多次。
+def test_text_messages_are_idempotent(global_prompt: str) -> None:
+    """阶段 2 修复后的行为：重复构造不会把 global system 注入多次。
 
     修复前端点层与 `event_parse.conversation_events` 各调一次
     `normalize_messages`，文本链路每次请求实际注入 2 次；现在注入点收敛到
-    `prompt_plan.build_prompt_plan` 一处，且 `normalize_messages` 自身带幂等保护。
+    `prompt_plan.build_prompt_plan` 一处（旧函数阶段 3 已删除）。
     """
-    once = normalize_messages([{"role": "user", "content": "你好"}])
-    twice = normalize_messages(once)
+    once = _render_text_messages([{"role": "user", "content": "你好"}])
+    twice = _render_text_messages(once)
 
     system_messages = [message for message in twice if message["role"] == "system"]
     assert len(system_messages) == 1
     assert system_messages == [{"role": "system", "content": global_prompt}]
 
 
-def test_normalize_messages_ignores_non_list_input(global_prompt: str) -> None:
+def test_text_messages_ignore_non_list_input(global_prompt: str) -> None:
     """非 list 输入被忽略，只剩 global system 一条。"""
-    assert normalize_messages(None) == [{"role": "system", "content": global_prompt}]
-    assert normalize_messages("not-a-list") == [{"role": "system", "content": global_prompt}]
+    assert _render_text_messages(None) == [{"role": "system", "content": global_prompt}]
+    assert _render_text_messages("not-a-list") == [{"role": "system", "content": global_prompt}]
 
 
-def test_normalize_messages_skips_non_dict_items(no_global_prompt: None) -> None:
+def test_text_messages_skip_non_dict_items(no_global_prompt: None) -> None:
     """列表里的非 dict 元素被跳过。"""
-    assert normalize_messages(["oops", {"role": "user", "content": "hi"}]) == [
+    assert _render_text_messages(["oops", {"role": "user", "content": "hi"}]) == [
         {"role": "user", "content": "hi"},
     ]
 
 
 # --------------------------------------------------------------------------- #
-# prompt_with_global_system
+# 图片链路 prompt 拼接（原 prompt_with_global_system）
 # --------------------------------------------------------------------------- #
 
-def test_prompt_with_global_system_joins_with_blank_line(global_prompt: str) -> None:
+def test_picture_prompt_joins_with_blank_line(global_prompt: str) -> None:
     """拼接格式固定为 `f"{global}\\n\\n{prompt}"`。"""
-    assert prompt_with_global_system("画一只猫") == f"{global_prompt}\n\n画一只猫"
+    plan = build_prompt_plan(model="gpt-image-2", prompt="画一只猫")
+
+    assert render_picture_prompt(plan) == f"{global_prompt}\n\n画一只猫"
 
 
-def test_prompt_with_global_system_returns_prompt_when_global_empty(no_global_prompt: None) -> None:
+def test_picture_prompt_returns_prompt_when_global_empty(no_global_prompt: None) -> None:
     """global 为空时原样返回，不加任何前缀。"""
-    assert prompt_with_global_system("画一只猫") == "画一只猫"
+    plan = build_prompt_plan(model="gpt-image-2", prompt="画一只猫")
+
+    assert render_picture_prompt(plan) == "画一只猫"
 
 
-def test_prompt_with_global_system_does_not_strip_prompt(global_prompt: str) -> None:
-    """prompt 前后空白被保留（当前实现不做 strip）。"""
-    assert prompt_with_global_system("  画一只猫  ") == f"{global_prompt}\n\n  画一只猫  "
+def test_picture_prompt_preserves_prompt_whitespace(global_prompt: str) -> None:
+    """无尺寸/质量提示时 prompt 前后空白被保留（与旧实现一致）。"""
+    plan = build_prompt_plan(model="gpt-image-2", prompt="  画一只猫  ")
+
+    assert render_picture_prompt(plan) == f"{global_prompt}\n\n  画一只猫  "
 
 
-def test_prompt_with_global_system_empty_prompt(global_prompt: str) -> None:
-    """空 prompt 时仍会拼出 `global + "\\n\\n"`，产生尾随空行。"""
-    assert prompt_with_global_system("") == f"{global_prompt}\n\n"
+def test_picture_prompt_empty_prompt_falls_back_to_image_only(global_prompt: str) -> None:
+    """空 prompt 且无图片时不产出 `global + "\\n\\n"` 的尾随空行，而是原样保留空串。"""
+    plan = build_prompt_plan(model="gpt-image-2", prompt="")
+
+    assert render_picture_prompt(plan) == f"{global_prompt}\n\n"
 
 
 # --------------------------------------------------------------------------- #

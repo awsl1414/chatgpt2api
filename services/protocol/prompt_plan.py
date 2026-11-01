@@ -14,11 +14,13 @@
 `PromptPlan` 只能在请求路径内构造。
 
 与相邻实现的边界：
-- `message_utils.normalize_messages`：把请求消息规范化为上游结构（含图片分段）；
+- `utils.message_content.normalize_message_list`：把请求消息规范化为上游结构（含图片分段）；
 - `conversation_payload.api_messages_to_conversation_messages`：渲染 web 端 wire format。
 
 本模块复用前者的语义，只负责「system 合并去重 + 提示词压平 + 尺寸/质量文本」这类
-策略决策。所有端点（文本三链路、picture_v2、codex）均已迁移到此，注入点唯一。
+策略决策。所有端点（文本三链路、picture_v2、codex）均已迁移到此，注入点唯一；
+旧的 `message_utils.normalize_messages` / `prompt_with_global_system` /
+`build_image_prompt` 已无调用方并在阶段 3 删除。
 """
 from __future__ import annotations
 
@@ -37,8 +39,8 @@ TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
     "If a user asks you to use a tool, say that tool execution is unavailable through this backend."
 )
 
-# codex 链路的固定英文指令。`services/backend/codex_image.py` 保留同名常量作为
-# `iter_codex_image_response_events` 的默认参数值，两者由测试守卫逐字一致。
+# codex 链路的固定英文指令（唯一事实源）。`services/backend/codex_image.py`
+# 从这里 import 后用作 `iter_codex_image_response_events` 的默认参数值。
 CODEX_RESPONSES_INSTRUCTIONS = (
     "Use the image_generation tool to create exactly one image for the user's request. "
     "Return the generated image result."
@@ -64,17 +66,17 @@ class PromptPlan:
       图片链路不使用该字段（picture_v2 只认压平后的 `prompt`）；
     - `prompt`：实际发往上游的单一文本，图片链路已拼接尺寸/质量提示，保证非空；
     - `hints`：随请求发送的 system hint（图片链路为 `picture_v2`）；
-    - `size` / `quality`：请求级生图参数原值（未做 `size_enabled` 门控）。当前链路
-      仍从 `ConversationRequest` 直接读取，本字段仅记录事实源，供后续链路统一消费。
     - `images`：base64 编码的输入图片。
+
+    生图参数 `size` / `quality` 不作为 plan 字段保存：它们只影响 `prompt` 文本
+    （`size_enabled` 时已拼入），运行时透传给上游工具层时一律读
+    `ConversationRequest.size` / `.quality`，避免同一事实存两处。
     """
 
     system: str
     messages: list[dict[str, Any]]
     prompt: str
     hints: list[str]
-    size: str | None
-    quality: str
     images: list[str]
 
 
@@ -216,8 +218,6 @@ def build_prompt_plan(
         messages=normalized,
         prompt=final_prompt,
         hints=list(hints),
-        size=size,
-        quality=quality,
         images=resolved_images,
     )
 

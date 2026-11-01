@@ -4,6 +4,7 @@
 
 + [重构] 提示词组装收敛到单一事实源 `services/protocol/prompt_plan.py`（`PromptPlan`）：文本（`/v1/chat/completions`、`/v1/responses`、`/v1/messages`）、picture_v2 与 codex 三条链路统一在请求路径内构造一次提示词，各链路只做形态转换。由此修复三个缺陷：①配置 `global_system_prompt` 时文本链路每次请求注入 **2 次**；②`/v1/messages` 传图片模型名、或 `/v1/responses` 用图片模型但无 `image_generation` 工具时，上游收到空 `prompt`（纯图片请求现回退到「按参考图生成图片。」，并从 messages 提取输入图片，图生图不再丢图）；③`codex-*` 模型完全不读 `global_system_prompt`，现拼进 responses 的 `instructions` 字段。
 + [变更] 承接上条，以下对外可观测行为随之调整：`global_system_prompt` 与「不支持工具」兜底文案合并为**一条** system 消息（旧实现为多条独立 system，`prompt_tokens` 相应减少）；兜底文案位置由首位改为合并 system 的末尾；`quality` 为 `auto`（默认值）时不再向上游注入「输出图片质量为 auto。」这类无信息量句子，因此未显式传 `quality` 的生图请求提示词文本与旧版不同。
++ [重构] 提示词链路收尾清理（行为不变）：删除已无调用方的 `message_utils.normalize_messages` / `prompt_with_global_system` / `build_image_prompt` 及其私有辅助函数；`CODEX_RESPONSES_INSTRUCTIONS` 收敛为 `prompt_plan.py` 单一事实源，`backend/codex_image.py` 改为 import；删除 `PromptPlan` 中无人消费的 `size` / `quality` 字段（运行时透传仍读 `ConversationRequest`）；设置页「全局附加指令」说明文案与 `config.example.md` 同步为三条链路的实际注入方式。
 
 + [文档] 新增 `docs/openapi.yaml`：对外 HTTP 接口的 OpenAPI 3.1 规范（66 path / 30 schema），覆盖 OpenAI/Anthropic 兼容层、图片异步任务、可编辑文件任务、管理面板 API 与无鉴权直链；与运行时 `create_app().openapi()` 逐操作比对过，错误体两套形态、鉴权级别、时间口径均已实测对齐，`openapi-spec-validator` 通过。
 + [加固] 管理端配置保存（`POST /api/settings`）对未知顶层键返回 400（错误信息「未知配置键: xxx」，简体中文）：`ConfigStore.update()` 新增顶层键白名单 `ALLOWED_CONFIG_KEYS`（与 `config.get()` 输出、`config.example.json` 键集合一致），防止前端注入任意键污染 config.json；白名单只作用于顶层键维度，嵌套字段仍由各域 normalize 收口；`auth-key` 与 `backup_state` 不在白名单内（前者为部署侧配置，后者为独立状态文件）。
