@@ -34,6 +34,11 @@ loginwithpassword_*/
 logwithemailverifycode_*/
 test_batch_output/
 
+# Next.js 自动生成的构建产物
+# web/next-env.d.ts 由 next dev / next build 在启动时重写（含 next 类型引用与路由类型路径），
+# 属于可再生文件：不提交，避免每次本地构建都产生 untracked 改动污染工作区。
+web/next-env.d.ts
+
 # graphify 知识图谱产物
 # 仅提交可公开共享的审计报告（纯文本、diff 友好、不含本机路径）；
 # 其余均为派生/本地状态，重新运行 /graphify . 即可重建：
