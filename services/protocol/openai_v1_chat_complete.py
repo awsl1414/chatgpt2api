@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from dataclasses import replace
 from typing import Any, Iterable, Iterator
 
 from services.account_service import account_service
@@ -156,17 +157,18 @@ def text_chat_request(body: dict[str, Any]) -> tuple[str, PromptPlan]:
 
     global system 与不支持的本地工具兜底文案都在 `build_prompt_plan` 内合并一次，
     端点层不再单独调用 `normalize_messages`，避免重复注入。
-    缓存配置驱动的消息裁剪（`normalize_text_messages`）在构造前施加，
-    保持原有缓存指纹与去重语义。
+
+    缓存裁剪（`normalize_text_messages`）必须作用在**已拍平**的 `plan.messages` 上，
+    与旧顺序 `normalize_messages → normalize_text_messages` 一致；否则字符串 content
+    与分段 content 的签名不同，`drop_adjacent_duplicates` 会失效、缓存指纹也会变。
     """
     model = str(body.get("model") or "auto").strip() or "auto"
-    messages = normalize_text_messages(chat_messages_from_body(body))
     plan = build_prompt_plan(
         model=model,
-        messages=messages,
+        messages=chat_messages_from_body(body),
         tool_unavailable=has_unsupported_tools(body, WEB_SEARCH_TOOL_TYPES),
     )
-    return model, plan
+    return model, replace(plan, messages=normalize_text_messages(plan.messages))
 
 
 def text_chat_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:

@@ -2,7 +2,7 @@
 """`services.protocol.prompt_plan` 的单元测试。
 
 覆盖 `build_prompt_plan` 的策略决策（system 合并去重、空 prompt 派生、尺寸/质量
-注入、hints 默认值、auto 短路）与三个 renderer 的形态转换。阶段 1 尚无调用点，
+注入、hints 默认值、auto 短路）与三个 renderer 的形态转换。所有端点均已迁移到此，
 这些用例即该模块的行为契约。
 """
 from __future__ import annotations
@@ -42,7 +42,7 @@ def no_global_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
 # --------------------------------------------------------------------------- #
 
 def test_codex_instructions_constant_matches_backend() -> None:
-    """本模块的 codex 指令常量必须与 backend 侧保持一致（阶段 2 会收敛为单一来源）。"""
+    """本模块的 codex 指令常量必须与 backend 侧保持一致。"""
     assert CODEX_RESPONSES_INSTRUCTIONS == CODEX_INSTRUCTIONS_IN_BACKEND
 
 
@@ -53,7 +53,7 @@ def test_tool_unavailable_message_is_static_text() -> None:
 
 
 def test_tool_unavailable_message_single_source() -> None:
-    """阶段 2：端点文件里的逐字副本已删除，`prompt_plan` 是唯一来源。
+    """端点文件里的逐字副本已删除，`prompt_plan` 是唯一来源。
 
     端点模块不再定义同名常量（避免两处并存导致再次漂移）。
     """
@@ -175,6 +175,17 @@ def test_caller_supplied_system_message_is_preserved(global_prompt: str) -> None
     )
 
     assert plan.system == f"{global_prompt}\n\n调用方自带"
+    assert plan.messages == [{"role": "user", "content": "你好"}]
+
+
+def test_caller_system_containing_global_is_not_rewritten(global_prompt: str) -> None:
+    """调用方 system 里恰好含 global 文本时，不重排、不误删（与旧实现一致）。"""
+    plan = build_prompt_plan(
+        model="gpt-5-5",
+        messages=[{"role": "system", "content": f"前言\n\n{global_prompt}"}, {"role": "user", "content": "你好"}],
+    )
+
+    assert plan.system == f"{global_prompt}\n\n前言\n\n{global_prompt}"
     assert plan.messages == [{"role": "user", "content": "你好"}]
 
 

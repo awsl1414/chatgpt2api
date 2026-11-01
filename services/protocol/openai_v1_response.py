@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import time
 import uuid
+from dataclasses import replace
 from typing import Any, Iterable, Iterator
 
 from services.errors import InvalidRequestError
@@ -270,17 +271,18 @@ def text_response_request(body: dict[str, Any]) -> tuple[str, PromptPlan]:
 
     `input` 里的 `instructions` 作为请求级 system，与 global system 在
     `build_prompt_plan` 内合并一次；不支持的本地工具追加兜底 system 文案。
-    缓存配置驱动的消息裁剪（`normalize_text_messages`）在构造前施加，
-    保持原有缓存指纹与去重语义。
+
+    缓存裁剪（`normalize_text_messages`）作用在**已拍平**的 `plan.messages` 上，
+    与旧顺序 `normalize_messages → normalize_text_messages` 一致，保持缓存指纹
+    与相邻去重语义不变。
     """
     model = str(body.get("model") or "auto").strip() or "auto"
-    messages = normalize_text_messages(messages_from_input(body.get("input"), body.get("instructions")))
     plan = build_prompt_plan(
         model=model,
-        messages=messages,
+        messages=messages_from_input(body.get("input"), body.get("instructions")),
         tool_unavailable=has_unsupported_response_tools(body),
     )
-    return model, plan
+    return model, replace(plan, messages=normalize_text_messages(plan.messages))
 
 
 def text_response_parts(body: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
@@ -440,14 +442,17 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
         images = None
     input_image_tokens = count_image_content_tokens(_input_image_parts(body.get("input")), model)
     tool = response_image_tool(body)
-    size = tool.get("size")
+    raw_size = tool.get("size")
+    # 与旧行为一致：任何非空 size 都拼进提示词（`_apply_image_hints` 内部按真值判断），
+    # 不做 str/int 类型门控，避免客户端传数字尺寸时静默丢提示。
+    size = str(raw_size) if raw_size else None
     quality = str(tool.get("quality") or "auto")
     # 提示词事实源在请求路径内构造：尺寸/质量以中文文本注入 picture_v2 提示词。
     plan = build_prompt_plan(
         model=model,
         prompt=prompt,
         images=images,
-        size=size if isinstance(size, str) else None,
+        size=size,
         quality=quality,
         size_enabled=True,
     )

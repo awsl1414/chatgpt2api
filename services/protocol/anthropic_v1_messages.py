@@ -116,8 +116,9 @@ def message_request(body: dict[str, Any]) -> MessageRequest:
 
     提示词事实源 `plan` 在此构造一次：global system、请求级 `system`（含
     `preprocess_payload` 合并进来的工具规则）在 `build_prompt_plan` 内合并去重。
-    图片模型分支不再把空 `prompt` 发往上游——`plan.prompt` 会从 messages 的
-    user 文本派生，保证非空。
+    图片模型分支不再把空 `prompt` 发往上游——`plan.prompt` 从 messages 的 user
+    文本派生，纯图片请求回退到固定指令；`plan.images` 从 messages 的图片分段
+    提取，因此 Anthropic 的图生图请求不会丢图。
     """
     payload = preprocess_payload(dict(body))
     model = str(payload.get("model") or "auto").strip() or "auto"

@@ -21,6 +21,7 @@ from services.protocol.message_utils import (
     assistant_history_text,
 )
 from services.protocol.prompt_plan import (
+    PICTURE_V2_HINT,
     PromptPlan,
     build_prompt_plan,
     render_conversation_messages,
@@ -413,7 +414,9 @@ def conversation_events(
         # 传入的原始 prompt，`messages` 才是它的真实来源，保持既有语义不变。
         prompt=render_picture_prompt(plan) if image_model else prompt,
         images=(images or plan.images) if image_model else None,
-        system_hints=(plan.hints or None) if image_model else None,
+        # picture_v2 是图片链路的必要条件：`plan.hints` 为空时也不能降级到文本分支，
+        # 否则上游按文本对话处理、永远拿不到图。
+        system_hints=[PICTURE_V2_HINT] if image_model else None,
         thinking_effort=thinking_effort if not image_model else "",
     )
     yield from iter_conversation_payloads(payloads, history_text, history_messages)

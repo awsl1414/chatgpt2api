@@ -9,36 +9,18 @@ from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Iterable
+from typing import Any, Iterable
 
 import tiktoken
 
 from services.config import config
-from services.message_image import extract_image_from_message_content
 from utils.image_tokens import count_image_content_tokens
-
-if TYPE_CHECKING:
-    from services.protocol.prompt_plan import PromptPlan
+from utils.message_content import image_hint_text, message_text, normalize_message_list
 
 
 def encode_images(images: Iterable[tuple[bytes, str, str]]) -> list[str]:
     """把 `(图片字节, 文件名, mime)` 元组序列编码为 base64 字符串列表，跳过空图片。"""
     return [base64.b64encode(data).decode("ascii") for data, _, _ in images if data]
-
-
-def message_text(content: Any) -> str:
-    """从消息 content（字符串或分段列表）中提取纯文本，忽略图片等其他分段类型。"""
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and str(item.get("type") or "") in {"text", "input_text", "output_text"}:
-                parts.append(str(item.get("text") or ""))
-        return "".join(parts)
-    return ""
 
 
 def _leading_system_texts(messages: object) -> list[str]:
@@ -55,6 +37,17 @@ def _leading_system_texts(messages: object) -> list[str]:
     return texts
 
 
+def _already_prefixed(leading_system: list[str], text: str) -> bool:
+    """判断 `text` 是否已作为首条 system 的内容或其前缀出现（幂等判断）。
+
+    不能只做全等比较：合并后的 system 形如 `global\\n\\n请求级`，首条 system 全等于
+    global 的情形之外还要覆盖「以 global 开头」的情形，否则会二次注入。
+    """
+    if not text:
+        return False
+    return any(item == text or item.startswith(f"{text}\n\n") for item in leading_system)
+
+
 def normalize_messages(messages: object, system: Any = None) -> list[dict[str, Any]]:
     """把 OpenAI 风格的 messages 规范化为上游对话请求所需的结构。
 
@@ -63,44 +56,19 @@ def normalize_messages(messages: object, system: Any = None) -> list[dict[str, A
     - user 消息中的图片（base64 / bytes 分段）被抽取为 `{"type": "image", ...}` 分段，
       与文本分段并存；其余消息只保留纯文本。
 
-    幂等保护：若消息列表开头已经存在内容相同的 system 消息（例如把上一次本函数的
-    输出再次送入），则跳过对应的前置注入，避免 global system 被重复注入。
+    幂等保护：若消息列表开头已经存在 global system（全等或以它开头），则跳过注入，
+    避免把上一次本函数的输出再次送入时重复注入。
     新链路的注入决策统一由 `prompt_plan.build_prompt_plan` 承担，本函数保留给
-    尚未迁移的调用点使用。
+    尚未迁移的调用点使用（阶段 3 清理）。
     """
     leading_system = _leading_system_texts(messages)
     normalized = []
-    if config.global_system_prompt and config.global_system_prompt not in leading_system:
+    if config.global_system_prompt and not _already_prefixed(leading_system, config.global_system_prompt):
         normalized.append({"role": "system", "content": config.global_system_prompt})
     system_text = message_text(system)
-    if system_text and system_text not in leading_system:
+    if system_text and not _already_prefixed(leading_system, system_text):
         normalized.append({"role": "system", "content": system_text})
-    if isinstance(messages, list):
-        for message in messages:
-            if not isinstance(message, dict):
-                continue
-            role = message.get("role", "user")
-            content = message.get("content", "")
-            text = message_text(content)
-            images: list[tuple[bytes, str]] = []
-            if role == "user":
-                images.extend(extract_image_from_message_content(content))
-                if isinstance(content, list):
-                    for part in content:
-                        if not isinstance(part, dict) or part.get("type") != "image":
-                            continue
-                        data = part.get("data")
-                        if isinstance(data, (bytes, bytearray)) and all(existing[0] != bytes(data) for existing in images):
-                            images.append((bytes(data), str(part.get("mime") or "image/png")))
-            if images:
-                parts: list[Any] = []
-                if text:
-                    parts.append({"type": "text", "text": text})
-                for data, mime in images:
-                    parts.append({"type": "image", "data": data, "mime": mime})
-                normalized.append({"role": role, "content": parts})
-            else:
-                normalized.append({"role": role, "content": text})
+    normalized.extend(normalize_message_list(messages))
     return normalized
 
 
@@ -123,14 +91,10 @@ def build_image_prompt(prompt: str, size: str | None, quality: str = "auto") -> 
     """把接口契约中的 size / quality 参数以中文提示的形式拼进生图提示词。
 
     `quality == "auto"` 时短路，不注入「输出图片质量为 auto。」这类无信息量的句子。
-    新链路请直接用 `prompt_plan.build_prompt_plan`；本函数保留给尚未迁移的调用点。
+    实现见 `utils.message_content.image_hint_text`；新链路请直接用
+    `prompt_plan.build_prompt_plan`，本函数保留给尚未迁移的调用点。
     """
-    hints = []
-    if size:
-        hints.append(f"输出图片尺寸为 {size}。")
-    if quality and quality != "auto":
-        hints.append(f"输出图片质量为 {quality}。")
-    return f"{prompt.strip()}\n\n{''.join(hints)}" if hints else prompt
+    return image_hint_text(prompt, size, quality)
 
 
 def encoding_for_model(model: str) -> tiktoken.Encoding:
@@ -201,4 +165,6 @@ class ConversationRequest:
     progress_callback: Any = None  # Callable[[str], None] | None
     # 端点在请求路径内构造好的提示词事实源；下游直接渲染，不再重复拼装，
     # 避免尺寸/质量提示被二次注入。为 None 时下游按字段自行构造（幂等）。
-    plan: PromptPlan | None = None
+    # 类型为 `services.protocol.prompt_plan.PromptPlan`；此处用字符串注解是为了
+    # 不引入运行时循环导入（`prompt_plan` 不依赖本模块，方向单向）。
+    plan: "Any" = None

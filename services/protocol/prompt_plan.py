@@ -18,28 +18,27 @@
 - `conversation_payload.api_messages_to_conversation_messages`：渲染 web 端 wire format。
 
 本模块复用前者的语义，只负责「system 合并去重 + 提示词压平 + 尺寸/质量文本」这类
-策略决策。阶段 1 新旧路径并存（本模块尚无调用点），阶段 2 才逐端点迁移。
+策略决策。所有端点（文本三链路、picture_v2、codex）均已迁移到此，注入点唯一。
 """
 from __future__ import annotations
 
+import base64
 from dataclasses import dataclass
 from typing import Any
 
 from services.config import config
-from services.message_image import extract_image_from_message_content
 from utils.helper import is_supported_image_model
+from utils.message_content import image_hint_text, message_text, normalize_message_list
 
-# 请求带不受支持的工具（非搜索类）时注入的兜底 system 文案。
-# 阶段 1 下沉至此作为唯一副本；阶段 2 删除 `openai_v1_chat_complete.py`
-# 与 `openai_v1_response.py` 中的逐字重复定义。
+# 请求带不受支持的工具（非搜索类）时注入的兜底 system 文案（唯一副本）。
 TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
     "This compatibility backend cannot execute local tools, shell commands, non-search tools, "
     "or file operations. Do not claim to have run tools or inspected external resources. "
     "If a user asks you to use a tool, say that tool execution is unavailable through this backend."
 )
 
-# codex 链路的固定英文指令。阶段 1 与 `services/backend/codex_image.py` 的常量
-# 保持一致（有测试守卫），阶段 2 由本模块作为唯一来源。
+# codex 链路的固定英文指令。`services/backend/codex_image.py` 保留同名常量作为
+# `iter_codex_image_response_events` 的默认参数值，两者由测试守卫逐字一致。
 CODEX_RESPONSES_INSTRUCTIONS = (
     "Use the image_generation tool to create exactly one image for the user's request. "
     "Return the generated image result."
@@ -47,6 +46,9 @@ CODEX_RESPONSES_INSTRUCTIONS = (
 
 # 图片模型走 ChatGPT 网页端生图通道时携带的 system hint。
 PICTURE_V2_HINT = "picture_v2"
+
+# 纯图片、无文字请求（图生图）的兜底指令：上游必须收到非空 prompt。
+IMAGE_ONLY_PROMPT = "按参考图生成图片。"
 
 
 @dataclass(frozen=True)
@@ -62,7 +64,8 @@ class PromptPlan:
       图片链路不使用该字段（picture_v2 只认压平后的 `prompt`）；
     - `prompt`：实际发往上游的单一文本，图片链路已拼接尺寸/质量提示，保证非空；
     - `hints`：随请求发送的 system hint（图片链路为 `picture_v2`）；
-    - `size` / `quality`：请求级生图参数（未做 `size_enabled` 门控，供 codex 工具层等直接使用）；
+    - `size` / `quality`：请求级生图参数原值（未做 `size_enabled` 门控）。当前链路
+      仍从 `ConversationRequest` 直接读取，本字段仅记录事实源，供后续链路统一消费。
     - `images`：base64 编码的输入图片。
     """
 
@@ -75,105 +78,47 @@ class PromptPlan:
     images: list[str]
 
 
-def _text_of(content: Any) -> str:
-    """从消息 content（字符串或分段列表）中提取纯文本，忽略图片等其他分段类型。
-
-    与 `message_utils.message_text` 语义一致（分段直接相连，不加分隔符）。
-    """
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        parts = []
-        for item in content:
-            if isinstance(item, str):
-                parts.append(item)
-            elif isinstance(item, dict) and str(item.get("type") or "") in {"text", "input_text", "output_text"}:
-                parts.append(str(item.get("text") or ""))
-        return "".join(parts)
-    return ""
-
-
-def _normalize_messages(messages: object) -> list[dict[str, Any]]:
-    """把 OpenAI 风格的 messages 规范化为上游对话请求所需的结构（不含 system 注入）。
-
-    处理规则与 `message_utils.normalize_messages` 的消息部分一致：user 消息中的图片
-    （base64 / bytes 分段）被抽取为 `{"type": "image", ...}` 分段，与文本分段并存；
-    其余消息只保留纯文本。global system 的注入改由 `build_prompt_plan` 统一决策。
-    """
-    normalized: list[dict[str, Any]] = []
-    if not isinstance(messages, list):
-        return normalized
-    for message in messages:
-        if not isinstance(message, dict):
-            continue
-        role = message.get("role", "user")
-        content = message.get("content", "")
-        text = _text_of(content)
-        images: list[tuple[bytes, str]] = []
-        if role == "user":
-            images.extend(extract_image_from_message_content(content))
-            if isinstance(content, list):
-                for part in content:
-                    if not isinstance(part, dict) or part.get("type") != "image":
-                        continue
-                    data = part.get("data")
-                    if isinstance(data, (bytes, bytearray)) and all(existing[0] != bytes(data) for existing in images):
-                        images.append((bytes(data), str(part.get("mime") or "image/png")))
-        if images:
-            parts: list[Any] = []
-            if text:
-                parts.append({"type": "text", "text": text})
-            for data, mime in images:
-                parts.append({"type": "image", "data": data, "mime": mime})
-            normalized.append({"role": role, "content": parts})
-        else:
-            normalized.append({"role": role, "content": text})
-    return normalized
-
-
 def _prompt_from_messages(messages: list[dict[str, Any]]) -> str:
     """把对话历史里的全部 user 文本压平成单一 prompt（与 `extract_chat_prompt` 的拼接规则一致）。
 
     用于图片模型收到空 `prompt` 时兜底，避免上游拿到空串。多轮 user 文本以 `\\n` 连接。
+    只有图片、没有文字的 user 消息不贡献文本（由调用方按需回退到固定文案）。
     """
     parts: list[str] = []
     for message in messages:
         if str(message.get("role") or "").strip().lower() != "user":
             continue
-        text = _text_of(message.get("content")).strip()
+        text = message_text(message.get("content")).strip()
         if text:
             parts.append(text)
     return "\n".join(parts).strip()
 
 
-def _apply_image_hints(prompt: str, size: str | None, quality: str) -> str:
-    """把 size / quality 以中文提示拼进生图提示词；`quality == "auto"` 时不注入质量句。"""
-    hints: list[str] = []
-    if size:
-        hints.append(f"输出图片尺寸为 {size}。")
-    if quality and quality != "auto":
-        hints.append(f"输出图片质量为 {quality}。")
-    return f"{prompt.strip()}\n\n{''.join(hints)}" if hints else prompt
+def _has_image_parts(messages: list[dict[str, Any]]) -> bool:
+    """判断规范化后的消息里是否含图片分段（`{"type": "image", ...}`）。"""
+    for message in messages:
+        content = message.get("content")
+        if isinstance(content, list) and any(
+            isinstance(part, dict) and part.get("type") == "image" for part in content
+        ):
+            return True
+    return False
 
 
-def _strip_injected_fragments(text: str, fragments: list[str]) -> str:
-    """从已渲染的 system 文本中剥掉本模块注入过的片段，只留下调用方自带内容。
-
-    用于幂等：渲染结果是 `"\\n\\n".join(fragments)` 的形式，重复送入时若原样当作
-    请求级 system 会导致二次注入。这里按「片段 + 空行」逐段剥除前缀/后缀，
-    剩余部分才作为调用方自带 system 参与合并。
-    """
-    remainder = text
-    for fragment in fragments:
-        prefix = f"{fragment}\n\n"
-        suffix = f"\n\n{fragment}"
-        if remainder.startswith(prefix):
-            remainder = remainder[len(prefix):]
-        elif remainder == fragment:
-            remainder = ""
-        elif remainder.endswith(suffix):
-            remainder = remainder[: -len(suffix)]
-    return remainder
+def _images_from_messages(messages: list[dict[str, Any]]) -> list[str]:
+    """从规范化消息的图片分段中提取 base64 编码的图片，供 picture_v2 作为图片输入。"""
+    encoded: list[str] = []
+    for message in messages:
+        content = message.get("content")
+        if not isinstance(content, list):
+            continue
+        for part in content:
+            if not isinstance(part, dict) or part.get("type") != "image":
+                continue
+            data = part.get("data")
+            if isinstance(data, (bytes, bytearray)) and data:
+                encoded.append(base64.b64encode(bytes(data)).decode("ascii"))
+    return encoded
 
 
 def build_prompt_plan(
@@ -203,8 +148,12 @@ def build_prompt_plan(
     - `tool_unavailable`：是否在 system 末尾追加 `TOOL_UNAVAILABLE_SYSTEM_MESSAGE`。
 
     system 合并顺序固定为 `[global, 请求级 system, tool_unavailable]`，重复文本只保留首次出现。
-    消息列表里已有的前置 system 消息同样折进 `system`，因此对「已注入过的消息」重复调用
-    本函数不会二次注入（幂等）。
+    消息列表里已有的前置 system 消息同样折进 `system`。
+
+    幂等范围：当消息里**只有**本模块渲染出的合并 system（无调用方自带 system）时，
+    再次调用本函数不会二次注入。若调用方在 messages 里自带前置 system，渲染结果
+    无法安全拆回各片段，此时不保证幂等——端点侧应通过 `ConversationRequest.plan`
+    传递同一份事实源，而不是重复构造。
 
     副作用：读取 `config.global_system_prompt`（实时，支持热更新）；
     派生 prompt 时可能触发 `image_url` 远程拉取（受 `allow_remote_image_fetch` 开关约束）。
@@ -213,7 +162,7 @@ def build_prompt_plan(
     raw_messages = messages if isinstance(messages, list) and messages else None
     if raw_messages is None and str(prompt or "").strip():
         raw_messages = [{"role": "user", "content": prompt}]
-    normalized = _normalize_messages(raw_messages)
+    normalized = normalize_message_list(raw_messages)
 
     leading_system: list[str] = []
     while normalized and normalized[0].get("role") == "system":
@@ -221,16 +170,25 @@ def build_prompt_plan(
         if isinstance(text, str) and text:
             leading_system.append(text)
 
-    request_system = _text_of(system)
-    injected_fragments = [
-        part for part in (global_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else "") if part
-    ]
-    # 幂等：把已渲染结果再次送入时，首条 system 是「global + 请求级 + 兜底」的合并文本。
-    # 逐段剥掉其中已注入的片段，剩下才是调用方自带的 system，从而不会二次注入。
-    # 不能按空行拆分比较——global 自身可能含空行。
-    leading_system = [_strip_injected_fragments(text, injected_fragments) for text in leading_system]
-
+    request_system = message_text(system)
     # 合并顺序固定为 [global, 请求级 system, tool_unavailable]，重复文本只保留首次。
+    merged = "\n\n".join(
+        dict.fromkeys(
+            part for part in (global_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else "") if part
+        )
+    )
+    # 幂等：把已渲染结果再次送入时，首条 system 恰好等于本次合并结果（纯注入形态），
+    # 说明已注入过，直接丢弃。判定用**全等**而非子串剥离——字符串里已无法区分
+    # 「本模块注入的片段」与「调用方自己写的相同文本」，任何启发式剥离都可能改写
+    # 调用方的 system 顺序或误删其内容。
+    #
+    # 已知边界：调用方在 messages 里自带前置 system 时，渲染结果是
+    # `global + 客户端 system + 请求级 + 兜底` 的混合文本，再次送入无法安全拆分，
+    # 此时不保证幂等。端点侧通过 `ConversationRequest.plan` 传递事实源来规避该路径
+    # （不重复构造），因此不影响真实请求。
+    if merged and leading_system and leading_system[0] == merged:
+        leading_system.pop(0)
+
     system_parts: list[str] = []
     for part in (global_system, *leading_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else ""):
         if part and part not in system_parts:
@@ -240,12 +198,18 @@ def build_prompt_plan(
     final_prompt = str(prompt or "")
     if not final_prompt.strip():
         final_prompt = _prompt_from_messages(normalized)
+    # 纯图片、无文字的请求（典型：图生图）必须给上游一个非空指令，否则等于空 prompt。
+    if not final_prompt.strip() and image_model and _has_image_parts(normalized):
+        final_prompt = IMAGE_ONLY_PROMPT
     # 尺寸/质量提示只对图片模型有意义：文本模型即使调用方传了 size_enabled 也保持原样。
     if size_enabled and image_model:
-        final_prompt = _apply_image_hints(final_prompt, size, quality)
+        final_prompt = image_hint_text(final_prompt, size, quality)
 
     if hints is None:
         hints = [PICTURE_V2_HINT] if image_model else []
+
+    # 调用方未显式给图片时，从 messages 的图片分段派生，避免图生图请求丢图。
+    resolved_images = list(images) if images else _images_from_messages(normalized)
 
     return PromptPlan(
         system="\n\n".join(system_parts),
@@ -254,7 +218,7 @@ def build_prompt_plan(
         hints=list(hints),
         size=size,
         quality=quality,
-        images=list(images or []),
+        images=resolved_images,
     )
 
 
