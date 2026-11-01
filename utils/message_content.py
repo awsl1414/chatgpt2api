@@ -76,7 +76,11 @@ def normalize_message_list(messages: object) -> list[dict[str, Any]]:
 
 
 def image_hint_text(prompt: str, size: str | None, quality: str) -> str:
-    """把 size / quality 以中文提示拼进生图提示词；`quality == "auto"` 时不注入质量句。"""
+    """把 size / quality 以中文提示拼进生图提示词。
+
+    `quality == "auto"` 时不注入质量句——旧实现是 `if quality:`，会把默认值
+    「输出图片质量为 auto。」也发给上游；这是有意的行为变更（见 CHANGELOG）。
+    """
     hints: list[str] = []
     if size:
         hints.append(f"输出图片尺寸为 {size}。")

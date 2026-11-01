@@ -27,7 +27,7 @@ from services.protocol import anthropic_v1_messages, openai_v1_chat_complete, op
 from services.protocol import image_stream as image_stream_module
 from services.protocol.image_stream import stream_codex_image_outputs
 from services.protocol.message_utils import ConversationRequest
-from services.protocol.prompt_plan import IMAGE_ONLY_PROMPT, build_prompt_plan
+from services.protocol.prompt_plan import IMAGE_ONLY_PROMPT, build_prompt_plan, render_picture_prompt
 
 GLOBAL_PROMPT = "GLOBAL"
 PNG_B64 = "aGVsbG8="
@@ -309,6 +309,37 @@ def test_recover_conversation_id_uses_raw_prompt(global_prompt: str) -> None:
 
     backend.find_conversation_by_prompt.assert_called_once()
     assert backend.find_conversation_by_prompt.call_args[0][0] == "画一只猫"
+
+
+def test_generations_revised_prompt_contains_hints_and_global(
+    global_prompt: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """端到端：`/v1/images/generations` 的 revised_prompt 含尺寸句与 global。
+
+    第四缺陷的验收点——调用方能看到真正发给上游的内容，而不是未改写的原始输入。
+    """
+    from services.protocol import openai_v1_image_generations
+
+    captured: dict[str, Any] = {}
+
+    def fake_pool(request: ConversationRequest):
+        captured["request"] = request
+        return iter([])
+
+    monkeypatch.setattr(openai_v1_image_generations, "stream_image_outputs_with_pool", fake_pool)
+    openai_v1_image_generations.handle({
+        "prompt": "画一只猫",
+        "model": "gpt-image-2",
+        "size": "1792x1024",
+        "quality": "high",
+    })
+
+    request = captured["request"]
+    assert request.prompt == "画一只猫"
+    # final_prompt 是实际发往上游的单段文本：global + 尺寸/质量提示
+    assert request.final_prompt == render_picture_prompt(request.plan)
+    assert "输出图片尺寸为 1792x1024。" in request.final_prompt
+    assert request.final_prompt.startswith(f"{global_prompt}\n\n")
 
 
 def test_chat_global_prompt_read_at_request_time(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -407,6 +407,9 @@ def conversation_events(
     image_model = is_supported_image_model(model)
     history_text = "" if image_model else assistant_history_text(plan.messages)
     history_messages = [] if image_model else assistant_history_messages(plan.messages)
+    # 图片链路的 system hint 以 `plan.hints` 为准；picture_v2 是必要条件，
+    # 因此显式传空 hints 时仍回退到它，避免上游按文本对话处理、永远拿不到图。
+    system_hints = (plan.hints or [PICTURE_V2_HINT]) if image_model else None
     payloads = backend.stream_conversation(
         messages=render_conversation_messages(plan),
         model=model,
@@ -414,9 +417,7 @@ def conversation_events(
         # 传入的原始 prompt，`messages` 才是它的真实来源，保持既有语义不变。
         prompt=render_picture_prompt(plan) if image_model else prompt,
         images=(images or plan.images) if image_model else None,
-        # picture_v2 是图片链路的必要条件：`plan.hints` 为空时也不能降级到文本分支，
-        # 否则上游按文本对话处理、永远拿不到图。
-        system_hints=[PICTURE_V2_HINT] if image_model else None,
+        system_hints=system_hints,
         thinking_effort=thinking_effort if not image_model else "",
     )
     yield from iter_conversation_payloads(payloads, history_text, history_messages)

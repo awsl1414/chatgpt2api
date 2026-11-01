@@ -150,6 +150,10 @@ class ConversationRequest:
 
     model: str = "auto"
     prompt: str = ""
+    # 实际发往上游的文本（已拼入 global system 与尺寸/质量提示），由端点从
+    # `plan.prompt` 写入。`revised_prompt` 用它反映真实发送内容；会话恢复检索
+    # （`_recover_conversation_id`）仍用原始 `prompt`，避免 global 前缀稀释关键词匹配。
+    final_prompt: str = ""
     messages: list[dict[str, Any]] | None = None
     thinking_effort: str = ""
     images: list[str] | None = None
@@ -168,3 +172,13 @@ class ConversationRequest:
     # 类型为 `services.protocol.prompt_plan.PromptPlan`；此处用字符串注解是为了
     # 不引入运行时循环导入（`prompt_plan` 不依赖本模块，方向单向）。
     plan: "Any" = None
+
+    def __post_init__(self) -> None:
+        """端点只传 `plan` 时，把 `plan.prompt` 回填为 `final_prompt` 的兜底值。
+
+        图片链路的实际上游文本是 `render_picture_prompt(plan)`（含 global），
+        由端点显式写入 `final_prompt`；这里只做「未显式写入时不至于为空」的兜底，
+        避免在 `message_utils` 复制 renderer 的拼接逻辑（依赖纪律不允许）。
+        """
+        if not self.final_prompt and self.plan is not None:
+            self.final_prompt = str(getattr(self.plan, "prompt", "") or "")

@@ -20,6 +20,7 @@ from services.protocol.prompt_plan import (
     PromptPlan,
     build_prompt_plan,
     render_conversation_messages,
+    render_picture_prompt,
 )
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.openai_v1_chat_complete import stream_text_deltas, text_backend
@@ -458,6 +459,8 @@ def response_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
     )
     image_outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
+        # `revised_prompt` 反映实际发往上游的单段文本（含 global 与尺寸/质量提示）
+        final_prompt=render_picture_prompt(plan),
         model=model,
         size=size,
         quality=quality,

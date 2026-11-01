@@ -13,7 +13,7 @@ from services.protocol.image_stream import (
     stream_image_outputs_with_pool,
 )
 from services.protocol.message_utils import ConversationRequest, count_text_tokens, encode_images
-from services.protocol.prompt_plan import build_prompt_plan
+from services.protocol.prompt_plan import build_prompt_plan, render_picture_prompt
 from utils.image_tokens import count_image_inputs_tokens, count_image_output_items_tokens, image_usage
 
 
@@ -74,6 +74,8 @@ def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
     )
     outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
+        # `revised_prompt` 反映实际发往上游的单段文本（含 global 与尺寸/质量提示）
+        final_prompt=render_picture_prompt(plan),
         model=model,
         n=n,
         size=size,
