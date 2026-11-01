@@ -27,6 +27,9 @@ import { actionError, toastActionResult } from "@/lib/action-result";
 import { getStoredAuthKey } from "@/store/auth";
 import { useConfigStore } from "@/store/config";
 
+/** 备份执行中刷新备份状态的轮询间隔（毫秒） */
+const BACKUP_STATUS_POLL_INTERVAL_MS = 3000;
+
 function formatDateTime(value?: string | null) {
   if (!value) {
     return "—";
@@ -152,7 +155,7 @@ export function BackupSettingsCard() {
     }
     const timer = window.setInterval(() => {
       void loadBackups(true);
-    }, 3000);
+    }, BACKUP_STATUS_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [backupState?.running]);
 

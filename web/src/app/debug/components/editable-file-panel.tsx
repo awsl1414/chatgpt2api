@@ -31,6 +31,10 @@ type Props = {
 };
 
 const MAX_HISTORY = 20;
+/** 运行中任务耗时展示的刷新间隔（毫秒） */
+const ELAPSED_TICK_INTERVAL_MS = 1000;
+/** 运行中任务列表的轮询间隔（毫秒） */
+const RUNNING_TASKS_POLL_INTERVAL_MS = 5000;
 const DRAFT_ID = "__draft__";
 const taskIdOf = (task: EditableFileTask | null | undefined) => task?.taskId || task?.id || "";
 const isRunning = (task: EditableFileTask | null | undefined) => task?.status === "queued" || task?.status === "running";
@@ -151,14 +155,14 @@ export function EditableFilePanel({ title, kind, endpoint, defaultPrompt, imageR
 
   useEffect(() => {
     if (!running) return;
-    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    const timer = window.setInterval(() => setNow(Date.now()), ELAPSED_TICK_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [running]);
 
   useEffect(() => {
     const ids = runningIds.split(",").filter(Boolean);
     if (!ids.length) return;
-    const timer = window.setInterval(() => void fetchTasks(ids), 5000);
+    const timer = window.setInterval(() => void fetchTasks(ids), RUNNING_TASKS_POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [fetchTasks, runningIds]);
 
