@@ -33,3 +33,15 @@ git_cache/
 loginwithpassword_*/
 logwithemailverifycode_*/
 test_batch_output/
+
+# graphify 知识图谱产物
+# 仅提交可公开共享的审计报告（纯文本、diff 友好、不含本机路径）；
+# 其余均为派生/本地状态，重新运行 /graphify . 即可重建：
+#   graph.html / graph.json  —— 各约 2.8M，每次全量重写，提交会让仓库持续膨胀
+#   cache/                   —— 约 3.9M，与本地文件 mtime/内容指纹绑定，跨机器无效
+#   manifest.json            —— 同上，增量更新用的本地指纹清单
+#   cost.json                —— 个人 token 用量记录
+#   .graphify_root / .graphify_python —— 内含本机绝对路径，禁止提交
+#   .graphify_labels.json    —— 社区命名的派生缓存，随图重建而变
+graphify-out/*
+!graphify-out/GRAPH_REPORT.md
