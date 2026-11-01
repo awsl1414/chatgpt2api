@@ -18,7 +18,8 @@ from services.storage.base import StorageBackend
 
 AuthRole = Literal["admin", "user"]
 
-
+# 密钥 last_used_at 落盘的最小间隔（秒），避免每次校验都写存储
+LAST_USED_FLUSH_INTERVAL_SECS = 60
 
 
 def _hash_key(value: str) -> str:
@@ -243,7 +244,7 @@ class AuthService:
                 self._items[index] = next_item
                 item_id = self._clean(next_item.get("id"))
                 last_flush_at = self._last_used_flush_at.get(item_id)
-                if last_flush_at is None or (now - last_flush_at).total_seconds() >= 60:
+                if last_flush_at is None or (now - last_flush_at).total_seconds() >= LAST_USED_FLUSH_INTERVAL_SECS:
                     try:
                         self._save()
                         self._last_used_flush_at[item_id] = now

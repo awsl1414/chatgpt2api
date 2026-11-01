@@ -22,6 +22,11 @@ from utils.log import logger
 
 THUMBNAIL_SIZE = (320, 320)
 
+# 后台自动清理线程的检查周期：每 30 分钟检查一次磁盘空间
+IMAGE_CLEANUP_INTERVAL_SECS = 1800
+# 重新压缩图片时使用的 PNG 质量参数
+IMAGE_RECOMPRESS_QUALITY = 60
+
 
 def _cleanup_empty_dirs(root: Path) -> None:
     for path in sorted((p for p in root.rglob("*") if p.is_dir()), key=lambda p: len(p.parts), reverse=True):
@@ -219,7 +224,7 @@ def storage_stats() -> dict:
     }
 
 
-def compress_images(quality: int = 60) -> dict:
+def compress_images(quality: int = IMAGE_RECOMPRESS_QUALITY) -> dict:
     """重新压缩所有图片，返回节省的空间"""
     saved = 0
     count = 0
@@ -322,7 +327,7 @@ def _auto_cleanup_worker(stop_event: threading.Event) -> None:
     import shutil
     min_free_mb = config.image_min_free_mb
 
-    while not stop_event.wait(1800):  # 每30分钟
+    while not stop_event.wait(IMAGE_CLEANUP_INTERVAL_SECS):  # 每30分钟
         try:
             config.cleanup_old_images()
             cleanup_image_thumbnails()

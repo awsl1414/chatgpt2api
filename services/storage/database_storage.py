@@ -9,6 +9,9 @@ from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
 from services.storage.base import StorageBackend
 
+# 连接池中连接的最长存活时间（秒），到期后回收，避免数据库侧空闲断连
+POOL_RECYCLE_SECS = 3600
+
 
 class Base(DeclarativeBase):
     """所有 ORM 模型的声明式基类（SQLAlchemy 2.0 风格）。"""
@@ -40,7 +43,7 @@ class DatabaseStorageBackend(StorageBackend):
         self.engine = create_engine(
             database_url,
             pool_pre_ping=True,  # 自动检测连接是否有效
-            pool_recycle=3600,   # 1小时回收连接
+            pool_recycle=POOL_RECYCLE_SECS,   # 1小时回收连接
         )
         Base.metadata.create_all(self.engine)
         self.Session = sessionmaker(bind=self.engine)
