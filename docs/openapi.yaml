@@ -1,0 +1,2447 @@
+# chatgpt2api 对外接口 OpenAPI 3.1 规范
+#
+# 生成依据：chatgpt2api 仓库 v1.8.0 源码静态分析（static）。
+# 2026-11-01 复核：与 `create_app().openapi()` 运行时导出逐操作比对，并用
+# TestClient 采样各端点真实响应体；路由集合、请求模型与错误形态均以实测为准。
+# 响应中仍标注「未逐项核实」的字段表示只有静态读取依据。
+openapi: 3.1.0
+info:
+  title: chatgpt2api API
+  version: 1.8.0
+  description: |
+    ChatGPT 逆向代理（chatgpt2api）的对外 HTTP 接口。
+
+    接口分四层，鉴权强度不同：
+
+    1. **OpenAI 兼容 API**（`/v1/*`，另含 Anthropic 兼容的 `/v1/messages`）——面向下游客户端，
+       admin / user 密钥均可调用；`stream=true` 时返回 `text/event-stream`。
+    2. **图片异步任务 API**（`/api/image-tasks/*`）——非 OpenAI 标准的扩展，提交后轮询。
+    3. **管理面板 API**（`/api/*` 其余部分）——仅 admin 密钥可用，为内置 Web 面板（Next.js）服务。
+    4. **无鉴权端点**——`/version`、`/health`、图片/文件直链与前端静态资源。
+
+    鉴权：`Authorization: Bearer <key>`；`/v1/messages` 额外接受 `x-api-key`。
+    `config.json` 中的 `auth-key` 等价于一个 admin 身份。
+
+    > 免责声明：本项目为对 chatgpt.com 的逆向研究产物，仅供学习研究。
+servers:
+  - url: http://localhost:3000
+    description: Docker 默认映射（3000:80）
+
+tags:
+  - name: OpenAI 兼容 API
+  - name: Anthropic 兼容 API
+  - name: 图片异步任务
+  - name: 可编辑文件任务
+  - name: 身份
+  - name: 密钥管理
+  - name: 号池管理
+  - name: 外部账号源
+  - name: 系统设置
+  - name: 图片管理
+  - name: 备份
+  - name: 公开端点
+
+security:
+  - bearerAuth: []
+
+paths:
+  # ------------------------------------------------------------------ #
+  # OpenAI 兼容 API
+  # ------------------------------------------------------------------ #
+  /v1/models:
+    get:
+      tags: [OpenAI 兼容 API]
+      summary: 列出模型
+      description: |
+        返回按号池内账号类型从上游拉取的模型目录，并动态追加生图模型：
+        有 web 生图账号追加 `gpt-image-2`；有 codex Plus/Team/Pro 账号追加
+        `codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`
+        及 `plus-`/`team-`/`pro-` 前缀变体（`utils/helper.py:CODEX_IMAGE_PUBLIC_MODELS`）。
+        （static：services/protocol/openai_v1_models.py；capture：2026-11-01 实测返回 chatgpt 域模型目录）
+      responses:
+        "200":
+          description: 模型列表（OpenAI Model 格式）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ModelList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502":
+          description: 上游目录拉取失败
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /v1/chat/completions:
+    post:
+      tags: [OpenAI 兼容 API]
+      summary: 文本生成（OpenAI Chat 格式）
+      description: |
+        支持同步 JSON 与 `stream=true` SSE（OpenAI chunk 格式）。
+        请求体 schema 宽松（服务端 `extra="allow"`，未识别字段被透传）。
+        调用前会先执行内容审核，REJECT 则拒绝。
+        （static：api/ai.py、services/protocol/openai_v1_chat_complete.py）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ChatCompletionRequest" }
+      responses:
+        "200":
+          description: |
+            同步返回 Chat Completion；`stream=true` 时返回 SSE 流
+            （`data: {...}` 行 + 终止行 `data: [DONE]`，OpenAI 格式）。
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ChatCompletionResponse" }
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /v1/responses:
+    post:
+      tags: [OpenAI 兼容 API]
+      summary: 文本生成（OpenAI Responses 格式）
+      description: |
+        OpenAI Responses 协议面；`stream=true` 时 SSE 为 Responses 事件格式。
+        （static：api/ai.py、services/protocol/openai_v1_response.py）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResponsesCreateRequest" }
+      responses:
+        "200":
+          description: Response 对象或 SSE 流
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: OpenAI Response 对象（字段由上游协议转换而来，未逐项核实）
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /v1/images/generations:
+    post:
+      tags: [OpenAI 兼容 API]
+      summary: 文生图
+      description: |
+        同步返回或 `stream=true` SSE（分块传输图片数据）。
+        `response_format=b64_json`（默认）时同时落盘并返回本地 `url`；
+        `url` 时仅返回本地 `url`。均附带 `revised_prompt` 与 `usage`。
+        （static：api/ai.py、services/protocol/openai_v1_image_generations.py、
+        services/protocol/image_stream.py:105-134）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageGenerationRequest" }
+      responses:
+        "200":
+          description: 生图结果（含 usage）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageGenerationResponse" }
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: 号池无可用生图额度（no available image quota）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /v1/images/edits:
+    post:
+      tags: [OpenAI 兼容 API]
+      summary: 图生图 / 图片编辑
+      description: |
+        同时支持 multipart/form-data 上传与 application/json（图片用 URL / data URL /
+        base64 引用）。`file_id` 引用明确不支持（400）。图片引用单张上限 50MB。
+        （static：api/image_inputs.py:27-29,174-202,295-322）
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string }
+                model: { type: string, default: gpt-image-2 }
+                n: { type: string, description: "生成数量，字符串形式的整数，1-4" }
+                size: { type: string }
+                quality: { type: string, default: auto }
+                response_format: { type: string, default: b64_json, enum: [b64_json, url] }
+                stream: { type: string, description: '"true"/"1"/"yes"/"y"/"on" 为真，"false"/"0"/"no"/"n"/"off" 为假' }
+                client_task_id: { type: string }
+                image:
+                  type: array
+                  items: { type: string, format: binary }
+                  description: 输入图片，字段名兼容 image / image[] / images / images[] / image_url / image_url[]
+                mask:
+                  type: array
+                  items: { type: string, format: binary }
+                  description: 蒙版图，字段名兼容 mask / mask[]
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageEditJsonRequest" }
+      responses:
+        "200":
+          description: 生图结果（含 usage）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageGenerationResponse" }
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429":
+          description: 号池无可用生图额度
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /v1/search:
+    post:
+      tags: [OpenAI 兼容 API]
+      summary: 联网搜索
+      description: |
+        走上游搜索模型（SEARCH_MODEL），响应为上游原始结果外加 `_account_email`
+        字段（所用账号邮箱）。（static：services/protocol/openai_search.py）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: 搜索结果（结构取决于上游搜索模型，未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  _account_email: { type: string, description: 本次调用使用的账号邮箱 }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /v1/editable-file-tasks:
+    get:
+      tags: [可编辑文件任务]
+      summary: 查询可编辑文件任务（PPT/PSD）
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+          description: 逗号分隔的任务 id；为空则返回本身份全部任务
+      responses:
+        "200":
+          description: 任务列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditableFileTaskList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/ppt/generations:
+    post:
+      tags: [可编辑文件任务]
+      summary: 提交 PPT 生成任务
+      description: 异步任务：提交后用 /v1/editable-file-tasks 轮询，产物经 /files/{file_path} 下载。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditableFileTaskRequest" }
+      responses:
+        "200":
+          description: 任务快照
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditableFileTask" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/psd/generations:
+    post:
+      tags: [可编辑文件任务]
+      summary: 提交 PSD 生成任务
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/EditableFileTaskRequest" }
+      responses:
+        "200":
+          description: 任务快照
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EditableFileTask" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /v1/messages:
+    post:
+      tags: [Anthropic 兼容 API]
+      summary: 文本生成（Anthropic Messages 格式）
+      description: |
+        Anthropic Messages 协议面。认证可使用 `Authorization: Bearer` 或
+        `x-api-key` header（服务端内部拼成 Bearer 处理）。`stream=true` 时
+        SSE 为 Anthropic 事件格式（message_start / content_block_delta 等）。
+        （static：api/ai.py:146-159、services/log_service.py:246-300）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AnthropicMessageRequest" }
+      parameters:
+        - name: x-api-key
+          in: header
+          required: false
+          schema: { type: string }
+          description: "Anthropic 风格的密钥，等价于 Authorization: Bearer"
+        - name: anthropic-version
+          in: header
+          required: false
+          schema: { type: string }
+          description: 仅为兼容透传字段，服务端未校验
+      responses:
+        "200":
+          description: Message 对象或 Anthropic 格式 SSE 流
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                description: Anthropic Message 对象（字段由上游协议转换而来，未逐项核实）
+            text/event-stream:
+              schema: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  # ------------------------------------------------------------------ #
+  # 图片异步任务
+  # ------------------------------------------------------------------ #
+  /api/image-tasks:
+    get:
+      tags: [图片异步任务]
+      summary: 查询图片任务
+      description: "任务按「身份 id : client_task_id」隔离，只能看到自己提交的任务。"
+      parameters:
+        - name: ids
+          in: query
+          required: false
+          schema: { type: string }
+          description: 逗号分隔的任务 id；为空则返回本身份全部任务（按 updated_at 倒序）
+      responses:
+        "200":
+          description: 任务列表
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageTaskList" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/image-tasks/generations:
+    post:
+      tags: [图片异步任务]
+      summary: 提交文生图任务
+      description: |
+        `client_task_id` 幂等：重复提交同一 id 直接返回已存在任务快照。
+        任务固定 `n=1`、`response_format=url`。
+        （static：services/image_task_service.py:123-169,171-195）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ImageTaskGenerationRequest" }
+      responses:
+        "200":
+          description: 任务快照（状态为 queued）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageTask" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/image-tasks/edits:
+    post:
+      tags: [图片异步任务]
+      summary: 提交图生图任务
+      description: |
+        载体与 /v1/images/edits 相同（multipart 或 JSON），但必须携带 `client_task_id`。
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ImageTaskGenerationRequest"
+                - type: object
+                  required: [client_task_id]
+                  properties:
+                    client_task_id: { type: string, minLength: 1 }
+                    image:
+                      type: array
+                      items: { type: string, format: binary }
+                      description: 字段名兼容 image / image[] / images / images[] / image_url / image_url[]
+                    mask:
+                      type: array
+                      items: { type: string, format: binary }
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/ImageEditJsonRequest"
+                - type: object
+                  required: [client_task_id]
+                  properties:
+                    client_task_id: { type: string, minLength: 1 }
+      responses:
+        "200":
+          description: 任务快照（状态为 queued）
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageTask" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/image-tasks/{task_id}/resume-poll:
+    post:
+      tags: [图片异步任务]
+      summary: 续期任务轮询
+      description: 给未终结任务（queued/running）追加轮询超时，避免客户端侧提前判失败。
+      parameters:
+        - $ref: "#/components/parameters/TaskId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ResumePollRequest" }
+      responses:
+        "200":
+          description: 任务快照
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ImageTask" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /files/{file_path}:
+    get:
+      tags: [可编辑文件任务]
+      summary: 下载可编辑文件产物
+      description: 无鉴权（依赖路径不可猜测性）。
+      security: []
+      parameters:
+        - name: file_path
+          in: path
+          required: true
+          schema: { type: string }
+          description: 相对产物目录的路径，可含子目录
+      responses:
+        "200":
+          description: "文件内容（Content-Disposition: attachment）"
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "404":
+          description: 文件不存在
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  # ------------------------------------------------------------------ #
+  # 身份 / 公开端点
+  # ------------------------------------------------------------------ #
+  /auth/login:
+    post:
+      tags: [身份]
+      summary: 登录（校验密钥并回显身份）
+      description: 无签发动作——key 即凭证本身；响应仅回显 role / id / name 与版本。
+      responses:
+        "200":
+          description: 当前身份
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /version:
+    get:
+      tags: [公开端点]
+      summary: 服务版本
+      security: []
+      responses:
+        "200":
+          description: 版本号
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/VersionResponse" }
+
+  /health:
+    get:
+      tags: [公开端点]
+      summary: 号池健康监控
+      description: 无鉴权。JSON 模式会暴露号池规模、额度、限流与代理状态。
+      security: []
+      parameters:
+        - name: format
+          in: query
+          required: false
+          schema: { type: string, default: html, enum: [html, json] }
+      responses:
+        "200":
+          description: html 返回自刷新监控页（30s）；json 返回统计结构
+          content:
+            text/html:
+              schema: { type: string }
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthStats" }
+
+  # ------------------------------------------------------------------ #
+  # 密钥管理（admin）
+  # ------------------------------------------------------------------ #
+  /api/auth/users:
+    get:
+      tags: [密钥管理]
+      summary: 列出 user 密钥
+      responses:
+        "200":
+          description: 密钥列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [密钥管理]
+      summary: 创建 user 密钥
+      description: 明文 raw key 仅在创建响应中出现一次（存储的是 SHA-256 哈希）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: string, default: "" }
+      responses:
+        "200":
+          description: 新密钥（含一次性 raw key）与最新列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item, key, items]
+                properties:
+                  item: { $ref: "#/components/schemas/UserKey" }
+                  key: { type: string, description: 明文密钥，仅此一次 }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/auth/users/{key_id}:
+    post:
+      tags: [密钥管理]
+      summary: 修改 user 密钥（改名 / 启停 / 换 key）
+      parameters:
+        - $ref: "#/components/parameters/KeyId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: [string, "null"] }
+                enabled: { type: [boolean, "null"] }
+                key: { type: [string, "null"], description: 替换为新明文密钥 }
+      responses:
+        "200":
+          description: 更新后的密钥与列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item, items]
+                properties:
+                  item: { $ref: "#/components/schemas/UserKey" }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserKey" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [密钥管理]
+      summary: 删除 user 密钥
+      parameters:
+        - $ref: "#/components/parameters/KeyId"
+      responses:
+        "200":
+          description: 删除后的列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/UserKey" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------ #
+  # 号池管理（admin）
+  # ------------------------------------------------------------------ #
+  /api/accounts:
+    get:
+      tags: [号池管理]
+      summary: 列出账号
+      responses:
+        "200":
+          description: 账号列表（含 token 摘要、额度、状态、代理等，字段由 account_service 决定，未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [号池管理]
+      summary: 批量导入账号
+      description: |
+        `tokens[]`（纯 access_token）或 `accounts[]`（含 access_token/accessToken 的完整
+        对象）至少提供其一；导入后立即执行一轮 refresh 并返回结果。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                tokens:
+                  type: array
+                  items: { type: string }
+                accounts:
+                  type: array
+                  items:
+                    type: object
+                    additionalProperties: true
+                    properties:
+                      access_token: { type: string, description: 或 accessToken }
+      responses:
+        "200":
+          description: 导入与刷新结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [refreshed, errors]
+                properties:
+                  added: { type: [integer, "null"], description: 推断字段 }
+                  skipped: { type: [integer, "null"], description: 推断字段 }
+                  refreshed: { type: [integer, "null"], description: 推断字段 }
+                  errors:
+                    type: array
+                    items: {}
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    delete:
+      tags: [号池管理]
+      summary: 删除账号
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [tokens]
+              properties:
+                tokens:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/accounts/refresh:
+    post:
+      tags: [号池管理]
+      summary: 异步刷新账号 token
+      description: 后台执行，返回 progress_id 用于轮询。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                access_tokens:
+                  type: array
+                  items: { type: string }
+                  description: 为空则刷新全部账号
+      responses:
+        "200":
+          description: 进度 id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProgressStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/accounts/refresh/progress/{progress_id}:
+    get:
+      tags: [号池管理]
+      summary: 查询刷新进度
+      parameters:
+        - $ref: "#/components/parameters/ProgressId"
+      responses:
+        "200":
+          description: 进度结构（字段由 account_service 决定，未逐项核实）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/accounts/re-login:
+    post:
+      tags: [号池管理]
+      summary: 异步密码重登
+      description: 流程：密码登录 → 验证码登录 → 刷新 token。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access_tokens]
+              properties:
+                access_tokens:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: 进度 id
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ProgressStarted" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/accounts/re-login/progress/{progress_id}:
+    get:
+      tags: [号池管理]
+      summary: 查询重登进度
+      parameters:
+        - $ref: "#/components/parameters/ProgressId"
+      responses:
+        "200":
+          description: 进度结构（未逐项核实）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/accounts/update:
+    post:
+      tags: [号池管理]
+      summary: 修改单个账号
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [access_token]
+              properties:
+                access_token: { type: string }
+                type: { type: [string, "null"] }
+                status: { type: [string, "null"] }
+                quota: { type: [integer, "null"] }
+                proxy: { type: [string, "null"] }
+      responses:
+        "200":
+          description: 更新后的账号与列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item, items]
+                properties:
+                  item: { $ref: "#/components/schemas/Account" }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/accounts/export:
+    post:
+      tags: [号池管理]
+      summary: 导出完整账号
+      description: 仅导出同时具备 access_token、refresh_token、id_token 的账号；返回文件下载。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                access_tokens:
+                  type: array
+                  items: { type: string }
+                format:
+                  type: string
+                  enum: [json, zip]
+                  default: json
+      responses:
+        "200":
+          description: json 返回账号 JSON；zip 返回按账号命名的 zip 包
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+            application/zip:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/accounts/oauth/start:
+    post:
+      tags: [号池管理]
+      summary: 发起 OAuth（PKCE）登录
+      description: 登记一次 PKCE 会话，返回可让用户浏览器打开的 authorize URL。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email_hint: { type: string, default: "", description: 仅用于让登录页预填邮箱 }
+      responses:
+        "200":
+          description: 会话 id 与 authorize URL
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, authorize_url]
+                properties:
+                  session_id: { type: string }
+                  authorize_url: { type: string, format: uri }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/accounts/oauth/finish:
+    post:
+      tags: [号池管理]
+      summary: 完成 OAuth 登录
+      description: 提交用户浏览器抓回的 callback（完整 URL 或纯 code），换出 token 三件套并入库、刷新。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                session_id: { type: string, default: "" }
+                callback: { type: string, default: "" }
+      responses:
+        "200":
+          description: 入库与刷新结果
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+                properties:
+                  added: { type: [integer, "null"], description: 推断字段 }
+                  skipped: { type: [integer, "null"], description: 推断字段 }
+                  refreshed: { type: [integer, "null"], description: 推断字段 }
+                  errors: { type: array, items: {} }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/Account" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ------------------------------------------------------------------ #
+  # 外部账号源（admin）
+  # ------------------------------------------------------------------ #
+  /api/cpa/pools:
+    get:
+      tags: [外部账号源]
+      summary: 列出 CPA 池
+      description: 返回前剔除 secret_key。
+      responses:
+        "200":
+          description: 池列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pools]
+                properties:
+                  pools:
+                    type: array
+                    items: { $ref: "#/components/schemas/CPAPool" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [外部账号源]
+      summary: 创建 CPA 池
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_url, secret_key]
+              properties:
+                name: { type: string, default: "" }
+                base_url: { type: string }
+                secret_key: { type: string }
+      responses:
+        "200":
+          description: 新池与列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pool, pools]
+                properties:
+                  pool: { $ref: "#/components/schemas/CPAPool" }
+                  pools:
+                    type: array
+                    items: { $ref: "#/components/schemas/CPAPool" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/cpa/pools/{pool_id}:
+    post:
+      tags: [外部账号源]
+      summary: 修改 CPA 池
+      parameters:
+        - $ref: "#/components/parameters/PoolId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: [string, "null"] }
+                base_url: { type: [string, "null"] }
+                secret_key: { type: [string, "null"] }
+      responses:
+        "200":
+          description: 更新后的池与列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  pool: { $ref: "#/components/schemas/CPAPool" }
+                  pools:
+                    type: array
+                    items: { $ref: "#/components/schemas/CPAPool" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [外部账号源]
+      summary: 删除 CPA 池
+      parameters:
+        - $ref: "#/components/parameters/PoolId"
+      responses:
+        "200":
+          description: 删除后的列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pools]
+                properties:
+                  pools:
+                    type: array
+                    items: { $ref: "#/components/schemas/CPAPool" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/cpa/pools/{pool_id}/files:
+    get:
+      tags: [外部账号源]
+      summary: 浏览 CPA 池远端文件
+      parameters:
+        - $ref: "#/components/parameters/PoolId"
+      responses:
+        "200":
+          description: 远端文件列表（结构由 list_remote_files 决定，未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [pool_id, files]
+                properties:
+                  pool_id: { type: string }
+                  files: { type: array, items: { type: object, additionalProperties: true } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/cpa/pools/{pool_id}/import:
+    get:
+      tags: [外部账号源]
+      summary: 查询 CPA 导入进度
+      parameters:
+        - $ref: "#/components/parameters/PoolId"
+      responses:
+        "200":
+          description: 导入任务结构（未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import_job: { type: [object, "null"], additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [外部账号源]
+      summary: 启动 CPA 导入
+      parameters:
+        - $ref: "#/components/parameters/PoolId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                names:
+                  type: array
+                  items: { type: string }
+                  description: 要导入的远端文件名；为空语义未核实
+      responses:
+        "200":
+          description: 导入任务
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import_job: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/sub2api/servers:
+    get:
+      tags: [外部账号源]
+      summary: 列出 Sub2API 服务器
+      description: 返回前剔除 password / api_key，仅保留 has_api_key 布尔位。
+      responses:
+        "200":
+          description: 服务器列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [servers]
+                properties:
+                  servers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sub2APIServer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [外部账号源]
+      summary: 创建 Sub2API 服务器
+      description: 需提供 email+password 或 api_key 至少一组。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [base_url]
+              properties:
+                name: { type: string, default: "" }
+                base_url: { type: string }
+                email: { type: string, default: "" }
+                password: { type: string, default: "" }
+                api_key: { type: string, default: "" }
+                group_id: { type: string, default: "" }
+      responses:
+        "200":
+          description: 新服务器与列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [server, servers]
+                properties:
+                  server: { $ref: "#/components/schemas/Sub2APIServer" }
+                  servers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sub2APIServer" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/sub2api/servers/{server_id}:
+    post:
+      tags: [外部账号源]
+      summary: 修改 Sub2API 服务器
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name: { type: [string, "null"] }
+                base_url: { type: [string, "null"] }
+                email: { type: [string, "null"] }
+                password: { type: [string, "null"] }
+                api_key: { type: [string, "null"] }
+                group_id: { type: [string, "null"] }
+      responses:
+        "200":
+          description: 更新后的服务器与列表
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  server: { $ref: "#/components/schemas/Sub2APIServer" }
+                  servers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sub2APIServer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [外部账号源]
+      summary: 删除 Sub2API 服务器
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "200":
+          description: 删除后的列表
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [servers]
+                properties:
+                  servers:
+                    type: array
+                    items: { $ref: "#/components/schemas/Sub2APIServer" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /api/sub2api/servers/{server_id}/groups:
+    get:
+      tags: [外部账号源]
+      summary: 浏览 Sub2API 分组
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "200":
+          description: 分组列表（结构由远端服务决定，未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [server_id, groups]
+                properties:
+                  server_id: { type: string }
+                  groups: { type: array, items: { type: object, additionalProperties: true } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /api/sub2api/servers/{server_id}/accounts:
+    get:
+      tags: [外部账号源]
+      summary: 浏览 Sub2API 远端账号
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "200":
+          description: 远端账号列表（未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [server_id, accounts]
+                properties:
+                  server_id: { type: string }
+                  accounts: { type: array, items: { type: object, additionalProperties: true } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "502": { $ref: "#/components/responses/BadGateway" }
+
+  /api/sub2api/servers/{server_id}/import:
+    get:
+      tags: [外部账号源]
+      summary: 查询 Sub2API 导入进度
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      responses:
+        "200":
+          description: 导入任务结构（未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import_job: { type: [object, "null"], additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+    post:
+      tags: [外部账号源]
+      summary: 启动 Sub2API 导入
+      parameters:
+        - $ref: "#/components/parameters/ServerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_ids:
+                  type: array
+                  items: { type: string }
+      responses:
+        "200":
+          description: 导入任务
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  import_job: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  # ------------------------------------------------------------------ #
+  # 系统设置（admin）
+  # ------------------------------------------------------------------ #
+  /api/settings:
+    get:
+      tags: [系统设置]
+      summary: 读取全局配置
+      responses:
+        "200":
+          description: |
+            当前配置。键集合由 `services/config.py:ALLOWED_CONFIG_KEYS` 决定
+            （refresh_account_interval_minute、image_* 系列、allow_remote_image_fetch、
+            log_levels、sensitive_words、ai_review、global_system_prompt、
+            default_upstream_model_name、default_thinking_effort、base_url、backup、
+            image_storage、chat_completion_cache、proxy_runtime、third_party_apps）。
+            旧版全局 `proxy` 键已移除，不再出现（capture：2026-11-01 实测键集合 30 项）。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [config]
+                properties:
+                  config: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [系统设置]
+      summary: 更新全局配置
+      description: |
+        请求体 schema 宽松（`extra="allow"`），服务端按键值合并更新。
+        顶层键经白名单 `ALLOWED_CONFIG_KEYS` 校验：出现未知键返回 400，
+        错误体 `{"detail": {"error": "未知配置键: xxx"}}`（capture：2026-11-01 实测）。
+        白名单不含 `auth-key`（部署侧配置）与 `backup_state`（独立状态文件）。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: 更新后的配置
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [config]
+                properties:
+                  config: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/third-party-apps:
+    get:
+      tags: [系统设置]
+      summary: 读取第三方接入设置
+      description: 注意：此端点仅需 identity（user key 也可读），非 admin。
+      responses:
+        "200":
+          description: 第三方接入设置（结构未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [third_party_apps]
+                properties:
+                  third_party_apps: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/logs:
+    get:
+      tags: [系统设置]
+      summary: 查询调用日志
+      parameters:
+        - name: type
+          in: query
+          schema: { type: string, default: "" }
+        - name: start_date
+          in: query
+          schema: { type: string, default: "" }
+        - name: end_date
+          in: query
+          schema: { type: string, default: "" }
+      responses:
+        "200":
+          description: |
+            日志列表。结构为 `{"items": [...]}`（capture：2026-11-01 实测），
+            每条含 id / time / type / summary / detail，detail 内含
+            key_id / key_name / role / endpoint / model / started_at / ended_at /
+            duration_ms / status / request_text（请求文本预览，不含图像字节）。
+            时间字段为 UTC ISO8601（秒级 `Z` 后缀）。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/logs/delete:
+    post:
+      tags: [系统设置]
+      summary: 删除调用日志
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                ids: { type: array, items: { type: string }, default: [] }
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/proxy/test:
+    post:
+      tags: [系统设置]
+      summary: 测试代理连通性
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                url: { type: string, default: "" }
+      responses:
+        "200":
+          description: 测试结果（结构未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: {}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/proxy/runtime:
+    get:
+      tags: [系统设置]
+      summary: 读取代理运行时配置与状态
+      responses:
+        "200":
+          description: 运行时配置与状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runtime, status]
+                properties:
+                  runtime: { type: object, additionalProperties: true }
+                  status: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [系统设置]
+      summary: 更新代理运行时配置
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: true }
+      responses:
+        "200":
+          description: 更新后的配置与状态
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [runtime, status]
+                properties:
+                  runtime: { type: object, additionalProperties: true }
+                  status: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/proxy/clearance/test:
+    post:
+      tags: [系统设置]
+      summary: 测试 chatgpt.com clearance（CF 通行状态）
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                target_url: { type: string, default: "https://chatgpt.com" }
+      responses:
+        "200":
+          description: 测试结果（结构未逐项核实）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: {}
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/upstream-models:
+    get:
+      tags: [系统设置]
+      summary: 读取上游模型目录（模型下拉选项）
+      description: |
+        返回服务端缓存的上游模型 id 去重排序列表，供设置页「默认请求上游模型名称」下拉使用。
+        目录拉取失败时降级返回空列表（前端回退为手填值），不报错。
+        （static：api/system/proxy.py:57-74、services/model_service.py；capture：2026-11-01 实测 `{"models": [...]}`）
+      responses:
+        "200":
+          description: 模型 id 列表（升序去重；失败时为空数组）
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [models]
+                properties:
+                  models:
+                    type: array
+                    items: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/storage/info:
+    get:
+      tags: [系统设置]
+      summary: 存储后端信息与健康
+      responses:
+        "200":
+          description: 后端信息（json/sqlite/postgres/git）与健康检查
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [backend, health]
+                properties:
+                  backend: { type: object, additionalProperties: true }
+                  health: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ------------------------------------------------------------------ #
+  # 图片管理（admin）
+  # ------------------------------------------------------------------ #
+  /api/images:
+    get:
+      tags: [图片管理]
+      summary: 列出已生成的图片
+      parameters:
+        - name: start_date
+          in: query
+          schema: { type: string, default: "" }
+        - name: end_date
+          in: query
+          schema: { type: string, default: "" }
+      responses:
+        "200":
+          description: |
+            图片列表。结构为 `{"items": [...]}`（capture：2026-11-01 实测），
+            每条含 rel / path / name / date / size / created_at / storage / local /
+            webdav / remote_url / width / height / url / thumbnail_url / tags，
+            其中 url、thumbnail_url 由 config base_url 或请求 Host 拼接。
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/delete:
+    post:
+      tags: [图片管理]
+      summary: 删除图片
+      description: 按路径列表或按日期区间批量删除。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                paths: { type: array, items: { type: string }, default: [] }
+                start_date: { type: string, default: "" }
+                end_date: { type: string, default: "" }
+                all_matching: { type: boolean, default: false }
+      responses:
+        "200":
+          description: 删除结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/download:
+    post:
+      tags: [图片管理]
+      summary: 打包下载图片
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [paths]
+              properties:
+                paths: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: images.zip
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/download/{image_path}:
+    get:
+      tags: [图片管理]
+      summary: 单张图片下载
+      parameters:
+        - $ref: "#/components/parameters/ImageDownloadPath"
+      responses:
+        "200":
+          description: 图片文件
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/tags:
+    get:
+      tags: [图片管理]
+      summary: 列出全部标签
+      responses:
+        "200":
+          description: 标签集合
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [tags]
+                properties:
+                  tags: { type: array, items: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [图片管理]
+      summary: 设置图片标签
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [path, tags]
+              properties:
+                path: { type: string }
+                tags: { type: array, items: { type: string } }
+      responses:
+        "200":
+          description: 设置结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, tags]
+                properties:
+                  ok: { type: boolean, const: true }
+                  tags: { type: array, items: { type: string } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/tags/{tag}:
+    delete:
+      tags: [图片管理]
+      summary: 删除标签（从所有图片移除）
+      parameters:
+        - name: tag
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: 移除结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok, removed_from]
+                properties:
+                  ok: { type: boolean, const: true }
+                  removed_from: { type: integer }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/storage:
+    get:
+      tags: [图片管理]
+      summary: 图片存储统计
+      responses:
+        "200":
+          description: 存储统计（结构未逐项核实）
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/storage/compress:
+    post:
+      tags: [图片管理]
+      summary: 全量压缩图片
+      responses:
+        "200":
+          description: 压缩结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/images/storage/cleanup-to-target:
+    post:
+      tags: [图片管理]
+      summary: 按目标剩余空间清理图片
+      parameters:
+        - name: target_free_mb
+          in: query
+          schema: { type: integer, default: 500 }
+        - name: dry_run
+          in: query
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: 清理结果
+          content:
+            application/json:
+              schema: { type: object, additionalProperties: true }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/image-storage/test:
+    post:
+      tags: [图片管理]
+      summary: 测试 WebDAV 图片存储连接
+      responses:
+        "200":
+          description: 测试结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: {}
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/image-storage/sync:
+    post:
+      tags: [图片管理]
+      summary: 全量同步图片到远端存储
+      responses:
+        "200":
+          description: 同步结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: {}
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ------------------------------------------------------------------ #
+  # 备份（admin）
+  # ------------------------------------------------------------------ #
+  /api/backup/test:
+    post:
+      tags: [备份]
+      summary: 测试备份连接
+      responses:
+        "200":
+          description: 测试结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: {}
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/backups:
+    get:
+      tags: [备份]
+      summary: 备份列表、状态与设置
+      responses:
+        "200":
+          description: 备份总览
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, state, settings]
+                properties:
+                  items: { type: array, items: { type: object, additionalProperties: true } }
+                  state: { type: object, additionalProperties: true }
+                  settings: { type: object, additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/backups/run:
+    post:
+      tags: [备份]
+      summary: 立即执行备份
+      responses:
+        "200":
+          description: 备份结果
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [result]
+                properties:
+                  result: {}
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/backups/delete:
+    post:
+      tags: [备份]
+      summary: 删除备份
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                key: { type: string, default: "" }
+      responses:
+        "200":
+          description: 删除成功
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ok]
+                properties:
+                  ok: { type: boolean, const: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/backups/detail:
+    get:
+      tags: [备份]
+      summary: 备份详情
+      parameters:
+        - name: key
+          in: query
+          schema: { type: string, default: "" }
+      responses:
+        "200":
+          description: 备份详情
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [item]
+                properties:
+                  item: { type: [object, "null"], additionalProperties: true }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  /api/backups/download:
+    get:
+      tags: [备份]
+      summary: 下载备份
+      parameters:
+        - name: key
+          in: query
+          schema: { type: string, default: "" }
+      responses:
+        "200":
+          description: 备份文件
+          content:
+            application/octet-stream:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+
+  # ------------------------------------------------------------------ #
+  # 图片直链（无鉴权）
+  # ------------------------------------------------------------------ #
+  # 说明：这两个端点由 api/system/images.py 以 include_in_schema=False 注册，
+  # 因此不出现在 FastAPI 自动生成的 openapi() 中；此处为手工补录。
+  /images/{image_path}:
+    get:
+      tags: [公开端点]
+      summary: 生成图片直链
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ImageDownloadPath"
+      responses:
+        "200":
+          description: 图片内容
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /image-thumbnails/{image_path}:
+    get:
+      tags: [公开端点]
+      summary: 生成图片缩略图直链
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ImageDownloadPath"
+      responses:
+        "200":
+          description: 缩略图内容
+          content:
+            image/png:
+              schema: { type: string, format: binary }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: admin / user 密钥；config.json 的 auth-key 等价于 admin。
+
+  parameters:
+    TaskId:
+      name: task_id
+      in: path
+      required: true
+      schema: { type: string }
+    KeyId:
+      name: key_id
+      in: path
+      required: true
+      schema: { type: string }
+    ProgressId:
+      name: progress_id
+      in: path
+      required: true
+      schema: { type: string }
+    PoolId:
+      name: pool_id
+      in: path
+      required: true
+      schema: { type: string }
+    ServerId:
+      name: server_id
+      in: path
+      required: true
+      schema: { type: string }
+    ImageDownloadPath:
+      name: image_path
+      in: path
+      required: true
+      schema: { type: string }
+      description: 相对图片目录的路径，可含子目录
+
+  responses:
+    BadRequest:
+      description: |
+        参数错误。错误体随路径族不同（capture：2026-11-01 实测）：
+        `/v1/*` 返回 OpenAI/Anthropic 兼容错误对象（`/v1/messages` 为 Anthropic 形态），
+        其余路径返回 `{"detail": ...}`，其中 detail 可能是字符串，也可能是 `{"error": "..."}`。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+    Unauthorized:
+      description: |
+        密钥无效或已失效（401）。`/v1/*` 为 OpenAI/Anthropic 兼容错误对象，
+        其余路径为 `{"detail": {"error": "密钥无效或已失效，请重新登录"}}`。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+    Forbidden:
+      description: |
+        需要管理员权限（403）。`/v1/*` 为 OpenAI/Anthropic 兼容错误对象，
+        其余路径为 `{"detail": {"error": "需要管理员权限才能执行这个操作"}}`。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+    NotFound:
+      description: |
+        资源不存在（404）。`/v1/*` 为 OpenAI/Anthropic 兼容错误对象，
+        其余路径为 `{"detail": ...}`（字符串或 `{"error": "..."}`）。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+    BadGateway:
+      description: |
+        上游调用失败（502）。`/v1/*` 为 OpenAI/Anthropic 兼容错误对象，
+        其余路径为 `{"detail": ...}`。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+    ValidationError:
+      description: |
+        请求体校验失败（422，由 FastAPI 直接返回）。`/v1/*` 会被转换成
+        `{"error": {"message": "prompt: Field required", "type": "invalid_request_error", ...}}`；
+        其余路径保留 FastAPI 原始结构 `{"detail": [{"type", "loc", "msg", "input"}]}`。
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorBody" }
+
+  schemas:
+    Error:
+      description: |
+        错误体统一入口（两种路径族两种形态，二选一）：
+        - OpenAI 兼容形态（`/v1/*`）：`{"error": {"message", "type", "param", "code"}}`；
+          `/v1/messages` 为 Anthropic 形态 `{"type": "error", "error": {"type", "message"}}`。
+        - 管理端形态（非 `/v1/*`）：`{"detail": ...}`，detail 为字符串或 `{"error": "..."}`；
+          422 校验失败时 detail 为 FastAPI 的错误数组。
+      oneOf:
+        - $ref: "#/components/schemas/OpenAIErrorBody"
+        - $ref: "#/components/schemas/AnthropicErrorBody"
+        - $ref: "#/components/schemas/DetailErrorBody"
+
+    ErrorBody:
+      description: 与 `Error` 同义，保留旧引用名以免破坏既有引用。
+      oneOf:
+        - $ref: "#/components/schemas/OpenAIErrorBody"
+        - $ref: "#/components/schemas/AnthropicErrorBody"
+        - $ref: "#/components/schemas/DetailErrorBody"
+
+    OpenAIErrorBody:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [message, type, param, code]
+          properties:
+            message: { type: string }
+            type:
+              type: string
+              description: 如 invalid_request_error / authentication_error / permission_error / rate_limit_error / insufficient_quota / server_error
+            param: {}
+            code:
+              type: string
+              description: 如 bad_request / invalid_api_key / permission_denied / insufficient_quota / upstream_error
+
+    AnthropicErrorBody:
+      type: object
+      required: [type, error]
+      properties:
+        type: { type: string, const: error }
+        error:
+          type: object
+          required: [type, message]
+          properties:
+            type: { type: string }
+            message: { type: string }
+
+    DetailErrorBody:
+      type: object
+      required: [detail]
+      properties:
+        detail:
+          description: '字符串、`{"error": "..."}` 对象，或 FastAPI 422 的错误数组'
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+            - type: array
+              items: { type: object, additionalProperties: true }
+
+    LoginResponse:
+      type: object
+      required: [ok, version, role, subject_id, name]
+      properties:
+        ok: { type: boolean, const: true }
+        version: { type: string }
+        role: { type: string, enum: [admin, user] }
+        subject_id: { type: string }
+        name: { type: string }
+
+    VersionResponse:
+      type: object
+      required: [version]
+      properties:
+        version: { type: string }
+
+    Model:
+      type: object
+      required: [id, object, owned_by]
+      properties:
+        id: { type: string }
+        object: { type: string, const: model }
+        created: { type: integer }
+        owned_by: { type: string, description: 上游拉取的模型为 chatgpt 域；动态注入的生图模型为 chatgpt2api }
+        permission: { type: array, items: {} }
+        root: { type: [string, "null"] }
+        parent: { type: [string, "null"] }
+
+    ModelList:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items: { $ref: "#/components/schemas/Model" }
+
+    ChatCompletionRequest:
+      type: object
+      additionalProperties: true
+      description: OpenAI Chat Completion 请求；未列出的字段原样透传给协议转换层。
+      properties:
+        model: { type: [string, "null"], default: auto }
+        messages:
+          type: [array, "null"]
+          items: { type: object, additionalProperties: true }
+        prompt: { type: [string, "null"] }
+        n: { type: [integer, "null"] }
+        stream: { type: [boolean, "null"] }
+        modalities: { type: [array, "null"], items: { type: string } }
+
+    ChatCompletionResponse:
+      type: object
+      additionalProperties: true
+      description: OpenAI Chat Completion 响应（字段由上游协议转换而来，未逐项核实）。
+
+    ResponsesCreateRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        model: { type: [string, "null"], default: auto }
+        input: {}
+        tools:
+          type: [array, "null"]
+          items: { type: object, additionalProperties: true }
+        tool_choice: {}
+        stream: { type: [boolean, "null"] }
+
+    AnthropicMessageRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        model: { type: [string, "null"], default: auto }
+        messages:
+          type: [array, "null"]
+          items: { type: object, additionalProperties: true }
+        system: {}
+        stream: { type: [boolean, "null"] }
+
+    ImageGenerationRequest:
+      type: object
+      required: [prompt]
+      properties:
+        prompt: { type: string, minLength: 1 }
+        model: { type: string, default: gpt-image-2 }
+        n: { type: integer, minimum: 1, maximum: 4, default: 1 }
+        size: { type: [string, "null"] }
+        quality: { type: string, default: auto }
+        response_format: { type: string, default: b64_json, enum: [b64_json, url] }
+        history_disabled: { type: boolean, default: true }
+        stream: { type: [boolean, "null"] }
+
+    ImageEditJsonRequest:
+      type: object
+      required: [prompt]
+      description: |
+        JSON 载体的图片编辑请求。图片引用支持三种形式：
+        http(s) URL、data URL、base64 字符串，或带 image_url/url/b64_json/base64
+        字段的对象（file_id 明确不支持，返回 400）。
+      properties:
+        prompt: { type: string }
+        model: { type: string, default: gpt-image-2 }
+        n: { type: integer, minimum: 1, maximum: 4 }
+        size: { type: [string, "null"] }
+        quality: { type: string, default: auto }
+        response_format: { type: string, default: b64_json, enum: [b64_json, url] }
+        stream: { type: [boolean, "null"] }
+        client_task_id: { type: string }
+        images:
+          type: array
+          items:
+            $ref: "#/components/schemas/ImageReference"
+        mask:
+          $ref: "#/components/schemas/ImageReference"
+
+    ImageReference:
+      description: 图片引用——URL / data URL / base64 字符串，或引用对象。
+      oneOf:
+        - type: string
+        - type: object
+          additionalProperties: true
+          properties:
+            image_url:
+              oneOf:
+                - type: string
+                - type: object
+                  additionalProperties: true
+                  properties:
+                    url: { type: string }
+            url: { type: string }
+            b64_json: { type: string }
+            base64: { type: string }
+            filename: { type: string }
+            mime_type: { type: string }
+
+    ImageGenerationResponse:
+      type: object
+      required: [data]
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              b64_json:
+                type: [string, "null"]
+                description: response_format=b64_json 时返回；同时也会给出落盘后的 url
+              url:
+                type: [string, "null"]
+                description: 本服务落盘后的图片直链（基于 config base_url 或请求 Host 拼接）
+              revised_prompt: { type: [string, "null"] }
+        usage:
+          type: [object, "null"]
+          additionalProperties: true
+          description: 由 prompt 与输出图片规格估算的 token 用量（utils/image_tokens.py）
+
+    ImageTaskGenerationRequest:
+      type: object
+      required: [client_task_id, prompt]
+      properties:
+        client_task_id: { type: string, minLength: 1 }
+        prompt: { type: string, minLength: 1 }
+        model: { type: string, default: gpt-image-2 }
+        size: { type: [string, "null"] }
+        quality: { type: string, default: auto }
+
+    ImageTask:
+      type: object
+      required: [id, status, mode, model, quality, created_at, updated_at]
+      properties:
+        id: { type: string, description: 即提交时的 client_task_id }
+        status:
+          type: string
+          enum: [queued, running, success, error]
+        mode: { type: string, enum: [generate, edit] }
+        model: { type: string }
+        size: { type: string }
+        quality: { type: string }
+        created_at:
+          type: string
+          description: |
+            UTC ISO8601（秒级 `Z` 后缀，如 `2026-11-01T11:12:34Z`）。
+            存量任务可能仍是旧口径的本地时间 `YYYY-MM-DD HH:MM:SS`（capture：2026-11-01 实测两种并存）。
+        updated_at:
+          type: string
+          description: 同 created_at 的时间口径
+        conversation_id:
+          type: [string, "null"]
+          description: 上游会话 id，仅在产生后出现
+        data:
+          description: 生图结果（与 /v1/images/generations 的 data 同构，response_format=url）
+          oneOf:
+            - type: [object, "null"]
+              additionalProperties: true
+            - type: [array, "null"]
+              items: { type: object, additionalProperties: true }
+        usage: { type: [object, "null"], additionalProperties: true }
+        error: { type: [string, "null"] }
+        progress:
+          type: [string, "null"]
+          description: 最近一次进度回调步骤名（如 image_stream_resolve_start）
+        duration_ms: { type: [integer, "null"] }
+        elapsed_secs:
+          type: [number, "null"]
+          description: 仅 queued/running 状态返回，运行中实时耗时（秒）
+
+    ImageTaskList:
+      type: object
+      required: [items, missing_ids]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ImageTask" }
+        missing_ids:
+          type: array
+          items: { type: string }
+
+    ResumePollRequest:
+      type: object
+      properties:
+        extra_timeout_secs:
+          type: number
+          minimum: 5
+          maximum: 120
+          default: 30
+
+    EditableFileTaskRequest:
+      type: object
+      properties:
+        prompt: { type: string, default: "" }
+        base64_images:
+          type: array
+          items: { type: string }
+          default: []
+        client_task_id:
+          type: [string, "null"]
+          description: 为空时服务端生成
+
+    EditableFileTask:
+      type: object
+      required: [id, taskId, status, kind, created_at, updated_at, elapsed_seconds]
+      properties:
+        id: { type: string }
+        taskId: { type: string, description: 与 id 同值 }
+        status:
+          type: string
+          enum: [queued, running, success, error]
+        kind: { type: string, enum: [ppt, psd] }
+        created_at:
+          type: string
+          description: UTC ISO8601（秒级 `Z` 后缀）；存量任务可能仍为旧口径本地时间
+        updated_at: { type: string }
+        elapsed_seconds: { type: integer }
+        result:
+          type: object
+          additionalProperties: true
+          description: |
+            成功后出现，含 `conversation_id`、`primary_url`（主产物直链）、
+            `zip_url`（打包产物直链）；直链前缀为 config base_url 或请求 Host。
+            （static：services/editable_file_task_service.py:146-149）
+        error: { type: [string, "null"] }
+
+    EditableFileTaskList:
+      type: object
+      required: [items, missing_ids]
+      properties:
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/EditableFileTask" }
+        missing_ids:
+          type: array
+          items: { type: string }
+
+    UserKey:
+      type: object
+      required: [id, name, role, enabled, created_at]
+      properties:
+        id: { type: string, description: 12 位 hex }
+        name: { type: string }
+        role: { type: string, const: user }
+        enabled: { type: boolean }
+        created_at: { type: string }
+        last_used_at: { type: [string, "null"] }
+
+    Account:
+      type: object
+      additionalProperties: true
+      description: |
+        号池账号记录。字段由 account_service 决定（access_token、refresh_token、
+        id_token、type、status、quota、proxy、email、last_used_at 等），本次仅静态
+        读取，未逐项核实——以 /api/accounts 实际返回为准。
+
+    ProgressStarted:
+      type: object
+      required: [progress_id]
+      properties:
+        progress_id: { type: string, format: uuid }
+
+    CPAPool:
+      type: object
+      additionalProperties: true
+      description: CPA 池记录；secret_key 在所有响应中被剔除。
+      properties:
+        name: { type: string }
+        base_url: { type: string }
+
+    Sub2APIServer:
+      type: object
+      additionalProperties: true
+      description: Sub2API 服务器记录；password / api_key 在所有响应中被剔除。
+      properties:
+        name: { type: string }
+        base_url: { type: string }
+        has_api_key: { type: boolean }
+        group_id: { type: string }
+
+    HealthStats:
+      type: object
+      required: [status, healthy, version, storage, proxy_runtime, accounts]
+      description: /health?format=json 返回（static：api/system/health.py:22-40；capture：2026-11-01 实测结构一致）
+      properties:
+        status: { type: string, enum: [ok, degraded] }
+        healthy:
+          type: boolean
+          description: 号池 active > 0
+        version: { type: string }
+        storage:
+          type: object
+          additionalProperties: true
+          properties:
+            backend: { type: object, additionalProperties: true }
+            health: { type: object, additionalProperties: true }
+        proxy_runtime: { type: object, additionalProperties: true }
+        accounts:
+          type: object
+          required: [total, cumulative_total, active, total_quota, limited, abnormal, disabled, total_success, total_fail, by_type]
+          properties:
+            total: { type: integer }
+            cumulative_total: { type: integer }
+            active: { type: integer }
+            total_quota: { type: integer }
+            limited: { type: integer }
+            abnormal: { type: integer }
+            disabled: { type: integer }
+            total_success: { type: integer }
+            total_fail: { type: integer }
+            by_type:
+              type: object
+              additionalProperties: { type: integer }
+              description: 账号类型 → 数量

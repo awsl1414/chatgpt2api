@@ -198,6 +198,8 @@ environment:
 Authorization: Bearer <auth-key>
 ```
 
+完整的 OpenAPI 3.1 规范（含管理面板 API、鉴权级别与错误体形态）见 [`docs/openapi.yaml`](./docs/openapi.yaml)，可直接导入 Apifox / Postman / Swagger UI 等工具。
+
 <details>
 <summary><code>GET /v1/models</code></summary>
 <br>
