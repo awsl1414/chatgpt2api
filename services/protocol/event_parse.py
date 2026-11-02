@@ -416,7 +416,8 @@ def conversation_events(
         # 图片链路只认压平后的单段 prompt（system 也拼进去）；文本链路仍用调用方
         # 传入的原始 prompt，`messages` 才是它的真实来源，保持既有语义不变。
         prompt=render_picture_prompt(plan) if image_model else prompt,
-        images=(images or plan.images) if image_model else None,
+        # 图片输入的唯一事实源是 plan（端点传入的 images 已在构造 plan 时并入）
+        images=plan.images if image_model else None,
         system_hints=system_hints,
         thinking_effort=thinking_effort if not image_model else "",
     )

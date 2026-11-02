@@ -4,23 +4,20 @@
 `PromptPlan`，各链路（文本 / picture_v2 / codex）只通过 renderer 做形态转换，
 不再各自判断「要不要注入 global system」「要不要拼尺寸/质量文本」。
 
-依赖纪律：只依赖 `services.config` / `services.message_image` / `utils`，
-**不得** import protocol 包内其他模块（与 `message_utils.py` 的约定一致），
-避免与 `event_parse` / `image_stream` 形成环。
+依赖纪律：只依赖 `services.config` / `services.protocol.message_content` / `utils`；
+`message_content` 是纯规范化工具（不含业务决策），不反向依赖本模块，因此不构成环。
+**不得** import protocol 包内其他模块（`message_utils` / `event_parse` / `image_stream`），
+避免形成环。
 
 热更新红线：`config` 是进程内单例，`global_system_prompt` 每次访问都实时读
 `config.data`，管理端改配置后同一进程的下一个请求立即生效。因此本模块所有
 模块级常量都必须是**静态文本**，绝不能把 config 求值进模块级常量；
 `PromptPlan` 只能在请求路径内构造。
 
-与相邻实现的边界：
-- `utils.message_content.normalize_message_list`：把请求消息规范化为上游结构（含图片分段）；
-- `conversation_payload.api_messages_to_conversation_messages`：渲染 web 端 wire format。
-
-本模块复用前者的语义，只负责「system 合并去重 + 提示词压平 + 尺寸/质量文本」这类
-策略决策。所有端点（文本三链路、picture_v2、codex）均已迁移到此，注入点唯一；
-旧的 `message_utils.normalize_messages` / `prompt_with_global_system` /
-`build_image_prompt` 已无调用方并在阶段 3 删除。
+注入与幂等：端点从调用方原始 messages 构造一次 plan，渲染结果只发往上游，
+**不会回灌** `build_prompt_plan`，因此不存在「每轮累积 global」的问题。
+`build_prompt_plan` 额外识别本模块渲染出的前置 system（全等匹配），使
+「调用方回放已渲染请求」路径同样幂等。
 """
 from __future__ import annotations
 
@@ -29,8 +26,13 @@ from dataclasses import dataclass
 from typing import Any
 
 from services.config import config
+from services.protocol.message_content import (
+    image_hint_text,
+    message_text,
+    normalize_message_list,
+    prompt_text_from_messages,
+)
 from utils.helper import is_supported_image_model
-from utils.message_content import image_hint_text, message_text, normalize_message_list
 
 # 请求带不受支持的工具（非搜索类）时注入的兜底 system 文案（唯一副本）。
 TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
@@ -66,7 +68,7 @@ class PromptPlan:
       图片链路不使用该字段（picture_v2 只认压平后的 `prompt`）；
     - `prompt`：实际发往上游的单一文本，图片链路已拼接尺寸/质量提示，保证非空；
     - `hints`：随请求发送的 system hint（图片链路为 `picture_v2`）；
-    - `images`：base64 编码的输入图片。
+    - `images`：base64 编码的输入图片，是图片输入的**唯一**事实源。
 
     生图参数 `size` / `quality` 不作为 plan 字段保存：它们只影响 `prompt` 文本
     （`size_enabled` 时已拼入），运行时透传给上游工具层时一律读
@@ -78,22 +80,6 @@ class PromptPlan:
     prompt: str
     hints: list[str]
     images: list[str]
-
-
-def _prompt_from_messages(messages: list[dict[str, Any]]) -> str:
-    """把对话历史里的全部 user 文本压平成单一 prompt（与 `extract_chat_prompt` 的拼接规则一致）。
-
-    用于图片模型收到空 `prompt` 时兜底，避免上游拿到空串。多轮 user 文本以 `\\n` 连接。
-    只有图片、没有文字的 user 消息不贡献文本（由调用方按需回退到固定文案）。
-    """
-    parts: list[str] = []
-    for message in messages:
-        if str(message.get("role") or "").strip().lower() != "user":
-            continue
-        text = message_text(message.get("content")).strip()
-        if text:
-            parts.append(text)
-    return "\n".join(parts).strip()
 
 
 def _has_image_parts(messages: list[dict[str, Any]]) -> bool:
@@ -141,21 +127,21 @@ def build_prompt_plan(
     参数：
     - `model`：请求模型名，用于推导默认 `hints`；
     - `messages`：OpenAI 风格的消息列表；为空且给了 `prompt` 时按单条 user 消息处理；
-    - `prompt`：调用方原始提示词；为空时从 `messages` 的 user 文本压平派生（保证非空）；
-    - `images`：base64 输入图片；
+    - `prompt`：调用方原始提示词；为空时从 messages 的 user 文本压平派生（保证非空）；
+    - `images`：base64 输入图片；为空时从 messages 的图片分段派生；
     - `size` / `quality`：生图参数；
     - `size_enabled`：接口契约里明确有 size 参数时才为 True，此时才把尺寸/质量拼进 `prompt`；
     - `hints`：显式 system hint；为 None 时图片模型默认 `["picture_v2"]`，其余为空；
     - `system`：请求级 system（字符串或 Anthropic 分段列表），与 global system 合并去重；
     - `tool_unavailable`：是否在 system 末尾追加 `TOOL_UNAVAILABLE_SYSTEM_MESSAGE`。
 
-    system 合并顺序固定为 `[global, 请求级 system, tool_unavailable]`，重复文本只保留首次出现。
-    消息列表里已有的前置 system 消息同样折进 `system`。
+    system 合并顺序固定为 `[global, 请求级 system, 调用方前置 system, tool_unavailable]`，
+    重复文本只保留首次出现（与旧实现保持一致）。消息列表里的前置 system 消息
+    同样折进 `system`。
 
-    幂等范围：当消息里**只有**本模块渲染出的合并 system（无调用方自带 system）时，
-    再次调用本函数不会二次注入。若调用方在 messages 里自带前置 system，渲染结果
-    无法安全拆回各片段，此时不保证幂等——端点侧应通过 `ConversationRequest.plan`
-    传递同一份事实源，而不是重复构造。
+    幂等：调用方把本模块**渲染后**的上游 messages 原样回放时，首条 system 会被
+    识别为已注入（全等，或「合并结果 + 调用方自带 system」的前缀形态）并剥离，
+    不会重复累积 global；调用方在 messages 里自带的 system 同样被计数一次。
 
     副作用：读取 `config.global_system_prompt`（实时，支持热更新）；
     派生 prompt 时可能触发 `image_url` 远程拉取（受 `allow_remote_image_fetch` 开关约束）。
@@ -173,33 +159,35 @@ def build_prompt_plan(
             leading_system.append(text)
 
     request_system = message_text(system)
-    # 合并顺序固定为 [global, 请求级 system, tool_unavailable]，重复文本只保留首次。
+    tool_system = TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else ""
     merged = "\n\n".join(
-        dict.fromkeys(
-            part for part in (global_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else "") if part
-        )
+        part for part in dict.fromkeys((global_system, request_system, tool_system)) if part
     )
-    # 幂等：把已渲染结果再次送入时，首条 system 恰好等于本次合并结果（纯注入形态），
-    # 说明已注入过，直接丢弃。判定用**全等**而非子串剥离——字符串里已无法区分
-    # 「本模块注入的片段」与「调用方自己写的相同文本」，任何启发式剥离都可能改写
-    # 调用方的 system 顺序或误删其内容。
-    #
-    # 已知边界：调用方在 messages 里自带前置 system 时，渲染结果是
-    # `global + 客户端 system + 请求级 + 兜底` 的混合文本，再次送入无法安全拆分，
-    # 此时不保证幂等。端点侧通过 `ConversationRequest.plan` 传递事实源来规避该路径
-    # （不重复构造），因此不影响真实请求。
-    if merged and leading_system and leading_system[0] == merged:
-        leading_system.pop(0)
+    # 幂等：调用方回放了本模块渲染出的 system 时丢弃已注入部分，避免二次累积。
+    # 两种形态都要覆盖：
+    # ① 首条 system 恰好等于本次合并结果（纯注入，无调用方自带 system）；
+    # ② 首条 system 是「本次合并结果 + 调用方自带 system」——剥离已注入的前缀，
+    #    保留调用方剩余文本。只在前缀精确匹配 `merge + 两个换行` 时剥离，
+    #    不做子串替换，因此调用方自身文本的顺序不会被改写。
+    if merged and leading_system:
+        if leading_system[0] == merged:
+            leading_system.pop(0)
+        elif leading_system[0].startswith(f"{merged}\n\n"):
+            remainder = leading_system[0][len(merged) + 2:]
+            if remainder.strip():
+                leading_system[0] = remainder
+            else:
+                leading_system.pop(0)
 
     system_parts: list[str] = []
-    for part in (global_system, *leading_system, request_system, TOOL_UNAVAILABLE_SYSTEM_MESSAGE if tool_unavailable else ""):
+    for part in (global_system, request_system, *leading_system, tool_system):
         if part and part not in system_parts:
             system_parts.append(part)
 
     image_model = is_supported_image_model(model)
     final_prompt = str(prompt or "")
     if not final_prompt.strip():
-        final_prompt = _prompt_from_messages(normalized)
+        final_prompt = prompt_text_from_messages(normalized)
     # 纯图片、无文字的请求（典型：图生图）必须给上游一个非空指令，否则等于空 prompt。
     if not final_prompt.strip() and image_model and _has_image_parts(normalized):
         final_prompt = IMAGE_ONLY_PROMPT
@@ -234,6 +222,16 @@ def render_conversation_messages(plan: PromptPlan) -> list[dict[str, Any]]:
 def render_picture_prompt(plan: PromptPlan) -> str:
     """picture_v2 链路：把 system 与已压平的 prompt 拼成单一字符串（上游只认单段文本）。"""
     return f"{plan.system}\n\n{plan.prompt}" if plan.system else plan.prompt
+
+
+def render_codex_input_prompt(plan: PromptPlan) -> str:
+    """codex 链路：上游 `input` 文本。
+
+    codex 的 system 走 responses 的 `instructions`（见 `render_codex_instructions`），
+    `input` 只承载调用方提示词本身，因此这里等于 `plan.prompt`。显式提供 renderer
+    是为了让「上游实际收到的文本」与 `revised_prompt` 同源，而不是散落在调用点。
+    """
+    return plan.prompt
 
 
 def render_codex_instructions(plan: PromptPlan, instructions: str = CODEX_RESPONSES_INSTRUCTIONS) -> str:

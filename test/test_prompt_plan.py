@@ -64,18 +64,40 @@ def test_tool_unavailable_message_single_source() -> None:
     assert not hasattr(openai_v1_response, "TOOL_UNAVAILABLE_SYSTEM_MESSAGE")
 
 
-def test_prompt_plan_module_has_no_protocol_package_imports() -> None:
-    """依赖纪律：`prompt_plan.py` 不得反向依赖 protocol 包内其他模块。
+def test_prompt_plan_module_only_depends_on_message_content() -> None:
+    """依赖纪律：`prompt_plan.py` 只允许依赖同层的 `message_content`。
 
-    与 `message_utils.py` 的约定一致，避免与 `event_parse` / `image_stream` 形成环。
+    `message_content` 是纯规范化工具（不反向依赖 `prompt_plan`），因此不构成环；
+    其他 protocol 模块（`message_utils` / `event_parse` / `image_stream`）一律禁止。
     """
     from pathlib import Path
 
     source = Path(__file__).resolve().parent.parent / "services" / "protocol" / "prompt_plan.py"
     code = source.read_text(encoding="utf-8")
 
-    assert "from services.protocol" not in code
-    assert "import services.protocol" not in code
+    assert "from services.protocol.message_content import" in code
+    for forbidden in ("import message_utils", "import event_parse", "import image_stream"):
+        assert forbidden not in code
+    assert "from services.protocol.message_utils" not in code
+    assert "from services.protocol.event_parse" not in code
+    assert "from services.protocol.image_stream" not in code
+
+
+def test_utils_never_import_services() -> None:
+    """`utils/__init__.py` 的依赖纪律可执行化：utils 包内不得 import services/api。"""
+    from pathlib import Path
+
+    utils_dir = Path(__file__).resolve().parent.parent / "utils"
+    offenders = [
+        path.name
+        for path in sorted(utils_dir.glob("*.py"))
+        if any(
+            line.startswith(("from services", "import services"))
+            for line in path.read_text(encoding="utf-8").splitlines()
+        )
+    ]
+
+    assert offenders == []
 
 
 def test_prompt_plan_is_frozen() -> None:
@@ -226,6 +248,39 @@ def test_empty_prompt_derived_from_user_messages(no_global_prompt: None) -> None
     )
 
     assert plan.prompt == "画一只猫\n再加一顶帽子"
+
+
+def test_caller_supplied_system_is_not_accumulated_on_replay(global_prompt: str) -> None:
+    """调用方自带前置 system 时，回放已渲染的 messages 仍然只注入一次 global。
+
+    这是 P1-1 的回归点：旧实现按「首条 system 全等于合并结果」判定，
+    `global + 客户端 system` 二次送入会变成 `global + global + 客户端 system`。
+    """
+    messages = [
+        {"role": "system", "content": "客户端自带系统提示"},
+        {"role": "user", "content": "你好"},
+    ]
+    first = build_prompt_plan(model="gpt-5-5", messages=messages)
+    second = build_prompt_plan(model="gpt-5-5", messages=render_conversation_messages(first))
+    third = build_prompt_plan(model="gpt-5-5", messages=render_conversation_messages(second))
+
+    assert first.system == f"{global_prompt}\n\n客户端自带系统提示"
+    assert second.system == first.system
+    assert third.system == first.system
+    assert third.system.count(global_prompt) == 1
+
+
+def test_empty_user_message_is_dropped(no_global_prompt: None) -> None:
+    """纯图片、无文本的 user 消息被上游消息列表丢弃（不再渲染空 user 消息）。"""
+    plan = build_prompt_plan(
+        model="gpt-5-5",
+        messages=[
+            {"role": "user", "content": ""},
+            {"role": "user", "content": "你好"},
+        ],
+    )
+
+    assert plan.messages == [{"role": "user", "content": "你好"}]
 
 
 def test_empty_prompt_without_messages_stays_empty(no_global_prompt: None) -> None:

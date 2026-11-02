@@ -3,7 +3,8 @@
 职责：
 - 轮询 conversation 文档直到出现图片文件 ID（含指数退避、settle 二次确认、
   内容政策违规检测），见 `poll_image_results`
-- `/backend-api/tasks` 结构化错误检查（`query_backend_tasks` / `check_task_error`）
+- `/backend-api/tasks` 查询（`query_backend_tasks`）；结构化错误判定复用
+  `services.protocol.message_content.check_task_error`
 - 文件/附件下载 URL 解析（`resolve_image_urls`）与图片字节下载
 供 services.protocol.image_stream 与 services.image_task_service 调用；
 需要客户端状态的函数以 `api: BackendClient` 显式声明依赖。
@@ -20,6 +21,7 @@ from services.backend.context import BackendClient
 from utils.collection import add_unique
 from services.config import config
 from services.errors import ImageContentPolicyError, ImagePollTimeoutError
+from services.protocol.message_content import check_task_error
 from utils.helper import UpstreamHTTPError, ensure_ok
 from utils.log import logger
 from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, QUICK_QUERY_TIMEOUT_SECS
@@ -398,37 +400,6 @@ def query_backend_tasks(
     if task_id:
         tasks = [t for t in tasks if isinstance(t, dict) and t.get("task_id") == task_id]
     return tasks
-
-def check_task_error(task: dict[str, Any]) -> tuple[bool, str, dict[str, Any]]:
-    """检查单个任务是否包含结构化错误。
-
-    通过以下字段判断（不依赖文本匹配）：
-    - image_gen_message.metadata.is_error == True
-    - image_gen_message.author.role == "assistant" (而非 "tool")
-    - image_gen_message.content.content_type == "text" (而非 "multimodal_text")
-
-    返回：
-    - (is_error, error_msg, metadata)
-    """
-    img_msg = task.get("image_gen_message") or {}
-    if not img_msg:
-        return False, "", {}
-
-    metadata = img_msg.get("metadata") or {}
-    content = img_msg.get("content") or {}
-    author = img_msg.get("author") or {}
-
-    is_error = metadata.get("is_error", False)
-    is_text_only = content.get("content_type") == "text"
-    is_assistant_role = author.get("role") == "assistant"
-
-    # 提取错误文本
-    error_msg = ""
-    if is_error and is_text_only:
-        parts = content.get("parts", [])
-        error_msg = "".join(p for p in parts if isinstance(p, str))
-
-    return is_error, error_msg, metadata
 
 def resolve_image_urls(api: BackendClient, conversation_id: str, file_ids: list[str], sediment_ids: list[str]) -> list[str]:
     """把图片结果 id 解析成可下载 URL。"""

@@ -12,9 +12,11 @@ from typing import Any
 
 from services.account_service import account_service
 from services.openai_backend_api import OpenAIBackendAPI
+from services.errors import InvalidRequestError
 from services.protocol.message_utils import count_message_tokens, count_text_tokens
 from services.protocol.openai_v1_chat_complete import collect_chat_content, stream_text_chat_completion
 from services.protocol.prompt_plan import PromptPlan, build_prompt_plan, render_conversation_messages
+from utils.helper import is_supported_image_model
 
 XML_TOOL_RULE = """Tool output adapter: when calling tools, output ONLY this XML and no prose/markdown:
 <tool_calls><tool_call><tool_name>TOOL_NAME</tool_name><parameters><PARAM><![CDATA[value]]></PARAM></parameters></tool_call></tool_calls>"""
@@ -116,9 +118,8 @@ def message_request(body: dict[str, Any]) -> MessageRequest:
 
     提示词事实源 `plan` 在此构造一次：global system、请求级 `system`（含
     `preprocess_payload` 合并进来的工具规则）在 `build_prompt_plan` 内合并去重。
-    图片模型分支不再把空 `prompt` 发往上游——`plan.prompt` 从 messages 的 user
-    文本派生，纯图片请求回退到固定指令；`plan.images` 从 messages 的图片分段
-    提取，因此 Anthropic 的图生图请求不会丢图。
+    图片模型由 `handle()` 在入口处直接拒绝（本端点只承载文本对话，不解析图片
+    结果），因此这里不需要为图片链路派生 prompt 或提取输入图片。
     """
     payload = preprocess_payload(dict(body))
     model = str(payload.get("model") or "auto").strip() or "auto"
@@ -309,6 +310,15 @@ def _stream_buffered_blocks(content: list[dict[str, object]], start_index: int =
 
 
 def handle(body: dict[str, Any]) -> dict[str, Any] | Iterator[dict[str, Any]]:
+    model = str(body.get("model") or "auto").strip() or "auto"
+    # 本端点只实现文本对话：图片模型的结果是图片工具事件，文本解析器会丢弃它们，
+    # 旧实现因此静默返回空文本。明确拒绝比返回空内容更可诊断，也是对外契约的一部分
+    # （见 docs/openapi.yaml 与 CHANGELOG）。
+    if is_supported_image_model(model):
+        raise InvalidRequestError(
+            f"image generation models are not supported on /v1/messages (model: {model}); "
+            "use /v1/images/generations or /v1/images/edits instead"
+        )
     request = message_request(body)
     if body.get("stream"):
         return stream_events(

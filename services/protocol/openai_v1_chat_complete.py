@@ -23,7 +23,6 @@ from services.protocol.prompt_plan import (
     PromptPlan,
     build_prompt_plan,
     render_conversation_messages,
-    render_picture_prompt,
 )
 from services.protocol.web_search_tool import (
     WEB_SEARCH_TOOL_TYPES,
@@ -233,7 +232,12 @@ def image_chat_plan(body: dict[str, Any]) -> tuple[str, str, int, list[tuple[byt
     `size_enabled=False`：尺寸/质量参数不拼进提示词（设计意图，有测试守卫）。
     """
     model, prompt, n, images = chat_image_args(body)
-    plan = build_prompt_plan(model=model, prompt=prompt, size_enabled=False)
+    plan = build_prompt_plan(
+        model=model,
+        prompt=prompt,
+        images=encode_images(images) or None,
+        size_enabled=False,
+    )
     return model, prompt, n, images, plan
 
 
@@ -241,12 +245,9 @@ def image_chat_response(body: dict[str, Any]) -> dict[str, Any]:
     model, prompt, n, images, plan = image_chat_plan(body)
     result = collect_image_outputs(stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
-        # `revised_prompt` 反映实际发往上游的单段文本（含 global）
-        final_prompt=render_picture_prompt(plan),
         model=model,
         n=n,
         response_format="b64_json",
-        images=encode_images(images) or None,
         plan=plan,
     )))
     response = completion_response(model, image_result_content(result), int(result.get("created") or 0) or None)
@@ -263,12 +264,9 @@ def image_chat_events(body: dict[str, Any]) -> Iterator[dict[str, Any]]:
     model, prompt, n, images, plan = image_chat_plan(body)
     image_outputs = stream_image_outputs_with_pool(ConversationRequest(
         prompt=prompt,
-        # `revised_prompt` 反映实际发往上游的单段文本（含 global）
-        final_prompt=render_picture_prompt(plan),
         model=model,
         n=n,
         response_format="b64_json",
-        images=encode_images(images) or None,
         plan=plan,
     ))
     yield from stream_image_chat_completion(image_outputs, model)

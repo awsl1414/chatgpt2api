@@ -24,12 +24,12 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Iterable, Iterator
 
 from services.account_service import account_service
-from services.backend.image_task import check_task_error
 from services.config import config
 from services.errors import (
     ImageContentPolicyError,
     ImageGenerationError,
     ImagePollTimeoutError,
+    ImageStreamHardTimeoutError,
     QuotaExhaustedError,
     image_stream_error_message,
     is_connection_timeout_error,
@@ -38,10 +38,12 @@ from services.errors import (
 )
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol.event_parse import conversation_events
+from services.protocol.message_content import check_task_error
 from services.protocol.message_utils import ConversationRequest
 from services.protocol.prompt_plan import (
     PromptPlan,
     build_prompt_plan,
+    render_codex_input_prompt,
     render_codex_instructions,
     render_picture_prompt,
 )
@@ -68,6 +70,8 @@ IMAGE_RETRY_POLL_TIMEOUT_SECS = 300
 POLL_RETRY_BACKOFF_BASE_SECS = 30.0
 # /backend-api/tasks 详细错误查询的默认超时（秒）
 TASK_DETAIL_QUERY_TIMEOUT_SECS = 10.0
+# 图片 SSE 流硬上限超时对外文案（英文稳定文案，不透出上游细节）
+IMAGE_STREAM_HARD_TIMEOUT_MESSAGE = "upstream image stream timed out before the image was generated, please retry later"
 # 查询 tasks 前等待任务创建的默认秒数（0 表示跳过等待）
 TASK_CREATE_WAIT_SECS = 2.0
 
@@ -478,7 +482,7 @@ def _resolve_stream_state(
         detailed_error = _get_detailed_error_from_tasks(backend, conversation_id)
         error_text = detailed_error or message or "Image generation was rejected by upstream policy."
         return None, ImageOutput(kind="message", model=request.model, index=index, total=total, text=error_text, conversation_id=conversation_id)
-    should_poll_for_image = bool(request.images) or last.get("turn_use_case") == "image gen"
+    should_poll_for_image = bool(_request_plan(request).images) or last.get("turn_use_case") == "image gen"
     if message and not file_ids and not sediment_ids and not should_poll_for_image:
         return None, ImageOutput(kind="message", model=request.model, index=index, total=total, text=message, conversation_id=conversation_id)
 
@@ -716,7 +720,6 @@ def _request_plan(request: ConversationRequest) -> PromptPlan:
         model=request.model,
         messages=request.messages,
         prompt=request.prompt,
-        images=request.images,
         size=request.size,
         quality=request.quality,
         size_enabled=request.size_enabled,
@@ -724,18 +727,14 @@ def _request_plan(request: ConversationRequest) -> PromptPlan:
 
 
 def _revised_prompt(request: ConversationRequest) -> str:
-    """取用于 `revised_prompt` 的文本：实际发往上游的单段提示词。
+    """取用于 `revised_prompt` 的文本：picture_v2 链路上游实际收到的单段提示词。
 
-    图片端点已把 `render_picture_prompt(plan)` 写入 `request.final_prompt`
-    （含 global 与尺寸/质量提示），这里直接用它；未写入时回退到 `plan` 渲染结果，
-    再回退到原始 `request.prompt`。
-    注意：会话恢复检索不走这里，它必须继续用原始 `request.prompt`。
+    与 `stream_image_outputs` 发往上游的文本同源：`render_picture_prompt(plan)`
+    （含 global 与尺寸/质量提示）。codex 链路的上游 `input` 是 `render_codex_input_prompt`，
+    由 `stream_codex_image_outputs` 另行取用，不走这里。
+    注意：会话恢复检索必须继续用原始 `request.prompt`，不要用本函数。
     """
-    if request.final_prompt:
-        return request.final_prompt
-    if request.plan is not None:
-        return render_picture_prompt(request.plan) or request.prompt
-    return request.prompt
+    return render_picture_prompt(_request_plan(request)) or request.prompt
 
 
 def stream_image_outputs(
@@ -760,7 +759,7 @@ def stream_image_outputs(
             plan=_request_plan(request),
             prompt=request.prompt,
             model=request.model,
-            images=request.images or [],
+            images=_request_plan(request).images,
             size=request.size,
             quality=request.quality,
             size_enabled=request.size_enabled,
@@ -827,9 +826,10 @@ def stream_codex_image_outputs(
     `instructions` 字段，与文本/picture_v2 链路保持同一份提示词事实源。
     """
     plan = _request_plan(request)
+    upstream_prompt = render_codex_input_prompt(plan)
     images = _codex_response_images(list(backend.iter_codex_image_response_events(
-        prompt=request.prompt,
-        images=request.images or [],
+        prompt=upstream_prompt,
+        images=plan.images,
         size=request.size,
         quality=request.quality,
         image_model=codex_image_tool_model(request.model),
@@ -837,7 +837,8 @@ def stream_codex_image_outputs(
     )))
     if not images:
         raise ImageGenerationError("No image result found in response")
-    revised_prompt = _revised_prompt(request)
+    # codex 的 global system 走 instructions，上游 input 就是 plan.prompt。
+    revised_prompt = upstream_prompt
     data = format_image_result(
         [{"b64_json": item, "revised_prompt": revised_prompt} for item in images],
         revised_prompt,
@@ -1207,6 +1208,21 @@ def _generate_single_image(
             ):
                 continue
             raise
+        except ImageStreamHardTimeoutError as exc:
+            # 硬上限是本地看门狗判定的确定性超时：不重试、不换号，
+            # 直接映射为可对外的稳定超时错误（502 upstream_stream_timeout）。
+            account_service.mark_image_result(token, False)
+            logger.warning({
+                "event": "image_stream_hard_timeout",
+                "request_token": token,
+                "account_email": account_email,
+                "index": index,
+            })
+            raise ImageGenerationError(
+                IMAGE_STREAM_HARD_TIMEOUT_MESSAGE,
+                code="upstream_stream_timeout",
+                account_email=account_email,
+            ) from exc
         except Exception as exc:
             account_service.mark_image_result(token, False)
             should_retry, token, last_error = _decide_transport_retry(
