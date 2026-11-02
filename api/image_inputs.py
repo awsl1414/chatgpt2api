@@ -18,6 +18,7 @@ from fastapi import HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
+from services.config import config
 from services.proxy_service import proxy_settings
 from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
 
@@ -261,11 +262,24 @@ def _filename_from_url(parsed_path: str, mime_type: str) -> str:
 
 
 def _download_image_url(url: str) -> ImageInput:
-    """下载远程图片：把 http/https 图片链接转成标准图片输入元组。"""
+    """下载远程图片：把 http/https 图片链接转成标准图片输入元组。
+
+    `allow_remote_image_fetch` 为 false 时拒绝任何 http/https 拉取（SSRF 收敛），
+    只接受 data URL / base64 / 上传文件；与 `services/message_image.py` 的
+    对话类图片输入使用同一个开关，行为一致。
+    """
     source = _clean(url)
     if source.startswith("data:"):
         return _decode_data_url(source)
     parsed = urlparse(source)
+    if not config.allow_remote_image_fetch:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "error": "remote image fetching is disabled by server configuration "
+                         "(allow_remote_image_fetch); use data URL or base64 instead"
+            },
+        )
     if parsed.scheme not in {"http", "https"} or not parsed.netloc:
         raise HTTPException(status_code=400, detail={"error": "image_url must be an http or https URL"})
     try:
