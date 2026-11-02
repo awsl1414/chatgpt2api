@@ -33,7 +33,7 @@ from services.protocol.message_content import (
     prompt_text_from_messages,
 )
 from utils.helper import is_supported_image_model
-from utils.image_size import orientation_label, parse_size_pair
+from utils.image_size import image_size_uses_api_field, orientation_label, parse_size_pair
 
 # 请求带不受支持的工具（非搜索类）时注入的兜底 system 文案（唯一副本）。
 TOOL_UNAVAILABLE_SYSTEM_MESSAGE = (
@@ -193,11 +193,15 @@ def build_prompt_plan(
     if not final_prompt.strip() and image_model and _has_image_parts(normalized):
         final_prompt = IMAGE_ONLY_PROMPT
     # 尺寸/质量提示只对图片模型有意义：文本模型即使调用方传了 size_enabled 也保持原样。
-    # 比例对所有已测模型都有效，且提示词是唯一被证实的通道（picture_v2 的 payload
-    # 无 size 键、codex 的 tools[0].size 被忽略），因此统一把尺寸+方向写进提示词。
+    # 方向词只注入给「接口 size 不生效」的链路（codex 系列）——那是它唯一能决定
+    # 宽高比的通道；接口 size 已生效的 picture_v2 保持原措辞，既有行为与对外
+    # `revised_prompt` 文本均不变（见 utils/image_size.py）。
     if size_enabled and image_model:
-        pair = parse_size_pair(size)
-        orientation = orientation_label(*pair) if pair else ""
+        orientation = ""
+        if not image_size_uses_api_field(model):
+            pair = parse_size_pair(size)
+            if pair:
+                orientation = orientation_label(*pair)
         final_prompt = image_hint_text(final_prompt, size, quality, orientation)
 
     if hints is None:

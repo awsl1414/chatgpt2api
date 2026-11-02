@@ -13,10 +13,12 @@ import type { ImageModel } from "@/lib/api/types";
  * - **比例对所有模型都有效**：请求的尺寸/比例由服务端写进提示词，四个已测模型
  *   都会按该比例出图（§4.3、§5 逐档验证）；
  * - **绝对像素对所有模型都无效**：出图面积恒定约 1.57M 像素（§8.3）；
- * - **codex 的上游工具字段 `size` 被忽略**（§3），但它的提示词比例有效。
+ * - **接口 `size` 只在 picture_v2 生效**：picture_v2 精确跟随（§5）；
+ *   codex 系列的 `tools[0].size` 收到但被完全忽略（§3），其比例只能靠提示词。
  *
  * 因此：**没有任何比例档位应该被置灰**——比例是真能兑现的能力。2K/4K 档位
- * 需要标注的只是「像素不兑现」，不是禁用。
+ * 需要标注的只是「像素不兑现」，不是禁用。方向词的注入策略属于后端决策
+ * （见 `utils/image_size.py`），前端只负责把尺寸如实提交。
  */
 
 /** 一个宽高比预设：ratio/tier 为持久化选项，width/height 为提交给后端的 size */
@@ -31,25 +33,25 @@ export type AspectOption = {
 };
 
 /**
- * 单个模型对尺寸请求的遵循能力（与后端能力表逐字段对应）。
+ * 单个模型对尺寸请求的遵循能力（与后端 `ImageSizeCapability` 逐字段对应）。
+ * - `apiSizeEffective`：请求的 `size` 字段能否决定出图宽高比
+ *   （picture_v2 为 true；codex 系列为 false，其 `tools[0].size` 被上游忽略）；
  * - `promptSizeEffective`：提示词里的尺寸/比例能否决定出图宽高比（所有已测模型为 true），
- *   前端据此决定比例选择器是否可用与说明文案；
- * - `upstreamToolSizeEffective`：上游工具层 `tools[0].size` 是否被采纳（codex 系列为 false）。
- *   该字段前端不直接消费，保留是为了与后端 `ImageSizeCapability` 保持逐字段可对照。
+ *   前端据此决定比例选择器是否可用与说明文案。
  *
  * 两者都不代表绝对像素可兑现：出图面积恒约 1.57M 像素。
  */
 export type ImageSizeCapability = {
+  apiSizeEffective: boolean;
   promptSizeEffective: boolean;
-  upstreamToolSizeEffective: boolean;
 };
 
 /** 后端 `utils/image_size.py` 的镜像：键为去掉 plus-/team-/pro- 前缀的基础模型名 */
 export const IMAGE_MODEL_SIZE_CAPABILITIES: Record<string, ImageSizeCapability> = {
-  "gpt-image-2": { promptSizeEffective: true, upstreamToolSizeEffective: false },
-  "codex-gpt-image-2": { promptSizeEffective: true, upstreamToolSizeEffective: false },
-  "codex-gpt-image-2.5-flare": { promptSizeEffective: true, upstreamToolSizeEffective: false },
-  "codex-gpt-image-2.5-sunburst": { promptSizeEffective: true, upstreamToolSizeEffective: false },
+  "gpt-image-2": { apiSizeEffective: true, promptSizeEffective: true },
+  "codex-gpt-image-2": { apiSizeEffective: false, promptSizeEffective: true },
+  "codex-gpt-image-2.5-flare": { apiSizeEffective: false, promptSizeEffective: true },
+  "codex-gpt-image-2.5-sunburst": { apiSizeEffective: false, promptSizeEffective: true },
 };
 
 const PLAN_PREFIXES = ["plus-", "team-", "pro-"];
@@ -64,6 +66,11 @@ export function baseImageModel(model: ImageModel): string {
 /** 返回模型的尺寸能力；非图片模型返回 null */
 export function imageSizeCapability(model: ImageModel): ImageSizeCapability | null {
   return IMAGE_MODEL_SIZE_CAPABILITIES[baseImageModel(model)] ?? null;
+}
+
+/** 请求 `size` 字段对该模型是否生效（picture_v2 为 true，codex 系列为 false） */
+export function modelUsesApiSize(model: ImageModel): boolean {
+  return imageSizeCapability(model)?.apiSizeEffective ?? false;
 }
 
 /** 提示词里的比例对该模型是否有效（所有已测图片模型均为 true） */

@@ -254,7 +254,7 @@ curl http://localhost:8000/v1/images/generations \
 | `prompt`          | 图片生成提示词                                            |
 | `n`               | 生成数量，当前后端限制为 `1-4`                                 |
 | `response_format` | 当前请求模型中包含该字段，默认值为 `b64_json`                       |
-| `size`            | `宽x高`，服务端转为提示词里的「尺寸 + 方向」语句，这是实测中所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。`codex-gpt-image-*` 不向上游发送 `tools[0].size` |
+| `size`            | `宽x高`。`gpt-image-2` 的接口 size 生效，宽高比精确跟随；`codex-gpt-image-*` 忽略该字段（不向上游发送 `tools[0].size`），改由提示词注入「尺寸 + 方向」。绝对像素不兑现（恒约 1.57M 像素） |
 
 <br>
 </details>
@@ -302,7 +302,7 @@ curl http://localhost:8000/v1/images/edits \
 | `image`     | 需要编辑的图片文件，使用 multipart/form-data 上传           |
 | `images`    | JSON 图片引用数组，支持 `{"image_url": "https://..."}` |
 | `image_url` | 表单模式下也可直接传图片链接，支持重复字段传多张图                     |
-| `size`      | `宽x高`，语义同 `/v1/images/generations`：转为提示词比例语句；绝对像素不兑现 |
+| `size`      | `宽x高`，语义同 `/v1/images/generations`：picture_v2 生效，codex 走提示词；绝对像素不兑现 |
 
 <br>
 </details>

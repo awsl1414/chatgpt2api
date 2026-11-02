@@ -2217,11 +2217,13 @@ components:
         size:
           type: [string, "null"]
           description: |
-            `宽x高`（如 `1024x1536`）。服务端把该值转成提示词里的「尺寸 + 方向」语句
-            （如「输出图片尺寸为 1792x1024，横版。」），这是实测中**所有模型唯一稳定兑现
-            比例**的通道。`codex-gpt-image-*` 系列（含 plus-/team-/pro- 前缀）不会向上游
-            发送 `tools[0].size`——该字段被上游完全忽略。任何模型都不兑现绝对像素，
-            出图面积恒定归一化到约 1,572,864 px（见 docs/feature-status.en.md）。
+            `宽x高`（如 `1024x1536`）。**`gpt-image-2`（picture_v2）的接口 size 生效**，
+            服务端转成提示词里的尺寸文本，宽高比精确跟随。
+            `codex-gpt-image-*` 系列（含 plus-/team-/pro- 前缀）的上游 `tools[0].size`
+            被完全忽略，服务端**不再发送该字段**，改为在提示词里注入「尺寸 + 方向」
+            （如「输出图片尺寸为 1792x1024，横版。」）——这是该链路唯一能决定宽高比的通道。
+            任何模型都不兑现绝对像素，出图面积恒定归一化到约 1,572,864 px
+            （见 docs/feature-status.en.md）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2242,8 +2244,9 @@ components:
         size:
           type: string
           description: |
-            语义同 `ImageGenerationRequest.size`：服务端转为提示词里的比例语句，
-            这是所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。
+            语义同 `ImageGenerationRequest.size`：picture_v2 的接口 size 生效；
+            codex 系列不发送上游 `tools[0].size`，改由提示词注入「尺寸 + 方向」。
+            绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream:
@@ -2266,8 +2269,9 @@ components:
         size:
           type: [string, "null"]
           description: |
-            语义同 `ImageGenerationRequest.size`：服务端转为提示词里的比例语句，
-            这是所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。
+            语义同 `ImageGenerationRequest.size`：picture_v2 的接口 size 生效；
+            codex 系列不发送上游 `tools[0].size`，改由提示词注入「尺寸 + 方向」。
+            绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2359,8 +2363,9 @@ components:
         size:
           type: [string, "null"]
           description: |
-            语义同 `ImageGenerationRequest.size`：服务端转为提示词里的比例语句，
-            这是所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。
+            语义同 `ImageGenerationRequest.size`：picture_v2 的接口 size 生效；
+            codex 系列不发送上游 `tools[0].size`，改由提示词注入「尺寸 + 方向」。
+            绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
 
     ImageTask:

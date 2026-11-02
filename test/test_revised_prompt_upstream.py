@@ -77,7 +77,7 @@ def test_generations_picture_upstream_text_equals_revised_prompt(
         {"prompt": "a cat", "model": "gpt-image-2", "size": "1792x1024", "quality": "high"},
     )
 
-    expected = f"{GLOBAL_SYS}\n\na cat\n\n输出图片尺寸为 1792x1024，横版。输出图片质量为 high。"
+    expected = f"{GLOBAL_SYS}\n\na cat\n\n输出图片尺寸为 1792x1024。输出图片质量为 high。"
     assert request.plan is not None
     assert render_picture_prompt(request.plan) == expected
     # 端点不再保存第二份「实际上游文本」，事实源只在 plan

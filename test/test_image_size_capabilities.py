@@ -26,8 +26,8 @@ from services.protocol.prompt_plan import build_prompt_plan
 from utils.image_size import (
     IMAGE_SIZE_CAPABILITIES,
     image_size_capability,
+    image_size_uses_api_field,
     image_size_uses_prompt,
-    image_size_uses_upstream_tool_field,
     orientation_label,
     parse_size_pair,
 )
@@ -53,31 +53,34 @@ class TestCapabilityTable:
     def test_prompt_size_effective_for_every_model(self, model: str) -> None:
         assert image_size_uses_prompt(model) is True
 
+    def test_picture_v2_accepts_api_size(self) -> None:
+        """实测 §5：picture_v2 的接口 size 精确决定宽高比。"""
+        assert image_size_uses_api_field("gpt-image-2") is True
+
     @pytest.mark.parametrize(
         "model",
         [
-            "gpt-image-2",
             "codex-gpt-image-2",
             "codex-gpt-image-2.5-flare",
             "codex-gpt-image-2.5-sunburst",
         ],
     )
-    def test_no_model_accepts_upstream_tool_size(self, model: str) -> None:
-        """实测：picture_v2 payload 无 size 键，codex 的 tools[0].size 被忽略。"""
-        assert image_size_uses_upstream_tool_field(model) is False
+    def test_codex_ignores_api_size(self, model: str) -> None:
+        """实测 §3：codex 的 tools[0].size 收到但被完全忽略。"""
+        assert image_size_uses_api_field(model) is False
 
     @pytest.mark.parametrize("plan_type", ["plus", "team", "pro"])
     @pytest.mark.parametrize("base", ["codex-gpt-image-2", "codex-gpt-image-2.5-flare"])
     def test_plan_prefix_keeps_capability(self, plan_type: str, base: str) -> None:
         prefixed = f"{plan_type}-{base}"
         assert image_size_uses_prompt(prefixed) is True
-        assert image_size_uses_upstream_tool_field(prefixed) is False
+        assert image_size_uses_api_field(prefixed) is False
 
     def test_unknown_and_text_models_have_no_capability(self) -> None:
         for model in ("auto", "gpt-5-5", "", None, "not-an-image-model"):
             assert image_size_capability(model) is None
             assert image_size_uses_prompt(model) is False
-            assert image_size_uses_upstream_tool_field(model) is False
+            assert image_size_uses_api_field(model) is False
 
     def test_table_covers_every_base_image_model(self) -> None:
         """能力表必须覆盖 `utils.helper.BASE_IMAGE_MODELS` 的每一个模型。"""
@@ -113,14 +116,14 @@ class TestPromptInjection:
     @pytest.mark.parametrize(
         "model",
         [
-            "gpt-image-2",
             "codex-gpt-image-2",
             "codex-gpt-image-2.5-flare",
             "codex-gpt-image-2.5-sunburst",
+            "plus-codex-gpt-image-2",
         ],
     )
-    def test_all_models_carry_orientation_in_prompt(self, model: str) -> None:
-        """所有模型的提示词都带尺寸 + 方向——比例是唯一被证实的通道。"""
+    def test_codex_carries_orientation_in_prompt(self, model: str) -> None:
+        """接口 size 不生效的链路必须把方向写进提示词——那是唯一有效通道。"""
         plan = build_prompt_plan(
             model=model,
             prompt="画一只猫",
@@ -130,6 +133,28 @@ class TestPromptInjection:
         )
         assert plan.prompt == "画一只猫\n\n输出图片尺寸为 1024x1792，竖版。"
 
+    def test_picture_v2_keeps_original_wording(self) -> None:
+        """picture_v2 的接口 size 生效，提示词保持原措辞（对外 revised_prompt 零变化）。"""
+        plan = build_prompt_plan(
+            model="gpt-image-2",
+            prompt="画一只猫",
+            size="1024x1792",
+            quality="auto",
+            size_enabled=True,
+        )
+        assert plan.prompt == "画一只猫\n\n输出图片尺寸为 1024x1792。"
+        assert "竖版" not in plan.prompt
+
+    def test_orientation_only_for_models_without_api_size(self) -> None:
+        """显式对比：同一 size 下，codex 带方向词、picture_v2 不带。"""
+        kwargs = {"prompt": "画一只猫", "size": "1920x1088", "size_enabled": True}
+        codex_prompt = build_prompt_plan(model="codex-gpt-image-2", **kwargs).prompt
+        picture_prompt = build_prompt_plan(model="gpt-image-2", **kwargs).prompt
+
+        assert codex_prompt == "画一只猫\n\n输出图片尺寸为 1920x1088，横版。"
+        assert picture_prompt == "画一只猫\n\n输出图片尺寸为 1920x1088。"
+        assert codex_prompt != picture_prompt
+
     def test_2k_and_4k_tiers_still_carry_ratio(self) -> None:
         """2K/4K 档位提交的像素值同样转成比例语句（比例有效、像素不兑现）。"""
         plan_2k = build_prompt_plan(
@@ -137,10 +162,11 @@ class TestPromptInjection:
         )
         assert "2560x1440，横版" in plan_2k.prompt
 
+        # picture_v2 保持原措辞：不带方向词，但像素值照常注入
         plan_4k = build_prompt_plan(
             model="gpt-image-2", prompt="画一只猫", size="2160x3840", size_enabled=True
         )
-        assert "2160x3840，竖版" in plan_4k.prompt
+        assert plan_4k.prompt == "画一只猫\n\n输出图片尺寸为 2160x3840。"
 
     def test_prompt_without_parseable_size_keeps_plain_size_text(self) -> None:
         plan = build_prompt_plan(
@@ -235,7 +261,9 @@ class TestEndToEndSubmitPath:
         # codex 上游工具层不再收到 size 字段（收到也会被忽略）
         assert "size" not in payload["tools"][0]
 
-    def test_picture_v2_upstream_prompt_carries_ratio(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_picture_v2_upstream_prompt_keeps_original_wording(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         request = _capture_generations_request(
             monkeypatch,
             {"prompt": "画一只猫", "model": "gpt-image-2", "size": "1920x1088"},
@@ -249,8 +277,9 @@ class TestEndToEndSubmitPath:
         )
         list(stream_image_outputs(backend, request))
 
-        # conversation_events 把 plan 渲染成 picture_v2 的单段 prompt 后才发上游
-        assert "输出图片尺寸为 1920x1088，横版。" in captured["prompt"]
+        # picture_v2 的接口 size 生效，提示词保持原措辞（不带方向词）
+        assert "输出图片尺寸为 1920x1088。" in captured["prompt"]
+        assert "横版" not in captured["prompt"]
 
     def test_empty_size_yields_no_ratio_hint(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """没有 size 时确实无从注入——这是前端必须提交 size 的原因。
@@ -278,3 +307,15 @@ class TestEndToEndSubmitPath:
         )
         payload = _codex_upstream_payload(request)
         assert "输出图片尺寸为 1024x1024，方形。" in payload["input"][0]["content"][0]["text"]
+
+    def test_frontend_default_size_picture_v2_round_trip(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """同一默认尺寸在 picture_v2 上不带方向词——两条链路措辞差异的显式对照。"""
+        request = _capture_generations_request(
+            monkeypatch,
+            {"prompt": "画一只猫", "model": "gpt-image-2", "size": "1024x1024"},
+        )
+        assert request.plan is not None
+        assert request.plan.prompt == "画一只猫\n\n输出图片尺寸为 1024x1024。"
+        assert "方形" not in request.plan.prompt

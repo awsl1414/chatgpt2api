@@ -275,7 +275,7 @@ def test_generations_revised_prompt_contains_hints_and_global(
     # 实际上游文本由链路渲染器决定：picture_v2 用 render_picture_prompt(plan)
     upstream = render_picture_prompt(request.plan)
     assert upstream.startswith(f"{global_prompt}\n\n")
-    assert "输出图片尺寸为 1792x1024，横版。" in upstream
+    assert "输出图片尺寸为 1792x1024。" in upstream
     assert "输出图片质量为 high。" in upstream
     # 端点不再单独保存一份「实际上游文本」，事实源唯一
     assert not hasattr(request, "final_prompt")

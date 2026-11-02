@@ -4,7 +4,8 @@
  * 依据工作区 `docs/size-verification.md`：
  * - 比例对所有模型都有效（§4.3、§5），因此**没有任何比例档应被置灰**；
  * - 2K/4K 只兑现比例、不兑现像素（§5），应标注而非禁用；
- * - codex 忽略上游 `tools[0].size`（§3），但提示词比例有效，因此仍须提交 size。
+ * - 接口 `size` 只在 picture_v2 生效（§5），codex 系列的 `tools[0].size` 被忽略（§3），
+ *   但两者的提示词比例都有效，因此前端对所有模型都提交 size。
  */
 import { describe, expect, it } from "vitest";
 
@@ -14,6 +15,7 @@ import {
   aspectOptions,
   baseImageModel,
   imageSizeCapability,
+  modelUsesApiSize,
   modelUsesPromptSize,
   resolveRequestSize,
 } from "@/lib/image-composer-options";
@@ -36,14 +38,24 @@ describe("模型能力表", () => {
     expect(modelUsesPromptSize(model)).toBe(true);
   });
 
+  it("接口 size 只在 picture_v2 生效", () => {
+    expect(modelUsesApiSize("gpt-image-2")).toBe(true);
+    expect(modelUsesApiSize("codex-gpt-image-2")).toBe(false);
+    expect(modelUsesApiSize("codex-gpt-image-2.5-flare")).toBe(false);
+    expect(modelUsesApiSize("codex-gpt-image-2.5-sunburst")).toBe(false);
+  });
+
   it.each(["plus-", "team-", "pro-"])("%s 前缀不改变能力判定", (prefix) => {
     expect(baseImageModel(`${prefix}codex-gpt-image-2`)).toBe("codex-gpt-image-2");
     expect(modelUsesPromptSize(`${prefix}codex-gpt-image-2`)).toBe(true);
+    expect(modelUsesApiSize(`${prefix}codex-gpt-image-2`)).toBe(false);
+    expect(modelUsesApiSize(`${prefix}gpt-image-2`)).toBe(true);
   });
 
   it("非图片模型没有能力记录", () => {
     expect(imageSizeCapability("gpt-5-5")).toBeNull();
     expect(modelUsesPromptSize("gpt-5-5")).toBe(false);
+    expect(modelUsesApiSize("gpt-5-5")).toBe(false);
   });
 
   it("能力表覆盖全部已知图片模型", () => {

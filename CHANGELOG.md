@@ -2,10 +2,10 @@
 
 ## Unreleased
 
-+ [修复] 生图尺寸传递与实测能力对齐（依据工作区 `docs/size-verification.md` 103 条真实出图样本）：新增后端单一事实源 `utils/image_size.py`（`IMAGE_SIZE_CAPABILITIES`），把两条实测事实分开表达——**比例对所有模型都有效**（提示词是唯一被证实的通道），**绝对像素对所有模型都无效**（出图面积恒定约 1.57M）。`codex-gpt-image-*` 全系列（含 plus-/team-/pro- 前缀）的上游 `tools[0].size` 被完全忽略，现已**不再发送该字段**；所有模型的尺寸意图统一由提示词承载，注入「尺寸 + 方向」（如「输出图片尺寸为 1792x1024，横版。」）。
++ [修复] 生图尺寸传递与实测能力对齐（依据工作区 `docs/size-verification.md` 103 条真实出图样本）：新增后端单一事实源 `utils/image_size.py`（`IMAGE_SIZE_CAPABILITIES`），按「接口 `size` 是否生效」与「提示词尺寸是否生效」两个维度描述模型能力。实测：接口 `size` **只在 picture_v2 生效**；`codex-gpt-image-*` 全系列（含 plus-/team-/pro- 前缀）的上游 `tools[0].size` 被完全忽略，现已**不再发送该字段**。提示词注入据此分流：**codex 系列（接口 size 无效）注入「尺寸 + 方向」**（如「输出图片尺寸为 1792x1024，横版。」），这是该链路唯一能决定宽高比的通道；**picture_v2（接口 size 有效）保持原措辞、行为零变化**（对外 `revised_prompt` 文本不变）。
 + [变更] 图片页尺寸选项**全部保持可用**（含 codex 下的比例档与 2K/4K 档）：比例是真能兑现的能力，2K/4K 的差异只是像素不兑现。2K/4K 档在 UI 上标注「比例有效，实际输出约 1.57M 像素，不兑现 2K/4K 像素」，W/H 输入框保持可用（其值转为提示词里的比例意图）。删除错误前提 `codexExclusiveTiers`（「2K/4K 仅 Codex 支持」已被实测推翻），不做兼容保留。
 + [变更] 前端对所有模型都提交 `size`（`resolveRequestSize` 不再按模型返回 undefined）：后端需要该值来构造提示词比例语句，不提交等于放弃比例控制。切换模型不再改写用户已选的档位（没有任何档位因模型而不可用）。
-+ [文档] `docs/openapi.yaml` 的 `size` 字段说明、`README.md` 图片接口参数表与功能列表同步：`size` 在服务端统一转为提示词比例语句；codex 系列不向上游发送 `tools[0].size`；绝对像素任何模型都不兑现。
++ [文档] `docs/openapi.yaml` 的 `size` 字段说明、`README.md` 图片接口参数表与功能列表同步：codex 系列注入「尺寸 + 方向」且不向上游发送 `tools[0].size`；picture_v2 保持原措辞；绝对像素任何模型都不兑现（恒约 1.57M）。
 
 + [重构] 提示词组装收敛到单一事实源 `services/protocol/prompt_plan.py`（`PromptPlan`）：文本（`/v1/chat/completions`、`/v1/responses`、`/v1/messages`）、picture_v2 与 codex 三条链路统一在请求路径内构造一次提示词，各链路只做形态转换。由此修复三个缺陷：①配置 `global_system_prompt` 时文本链路每次请求注入 **2 次**（含调用方自带 system 的请求，不会再逐轮累积）；②`/v1/responses` 用图片模型但无 `image_generation` 工具时上游收到空 `prompt`（纯图片请求现回退到「按参考图生成图片。」，并从 messages 提取输入图片，图生图不再丢图）；③`codex-*` 模型完全不读 `global_system_prompt`，现拼进 responses 的 `instructions` 字段。
 + [变更] 承接上条，以下对外可观测行为随之调整：`global_system_prompt` 与「不支持工具」兜底文案合并为**一条** system 消息（旧实现为多条独立 system，`prompt_tokens` 相应减少）；兜底文案位置由首位改为合并 system 的末尾；`quality` 为 `auto`（默认值）时不再向上游注入「输出图片质量为 auto。」这类无信息量句子，因此未显式传 `quality` 的生图请求提示词文本与旧版不同。

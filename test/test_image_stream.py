@@ -250,7 +250,7 @@ def test_stream_image_outputs_revised_prompt_matches_upstream_text(monkeypatch):
     revised = outputs[-1].data[0]["revised_prompt"]
     assert revised == render_picture_prompt(plan)
     assert "GLOBAL" in revised
-    assert "输出图片尺寸为 1792x1024，横版。" in revised
+    assert "输出图片尺寸为 1792x1024。" in revised
     assert "输出图片质量为 high。" in revised
     # 会话恢复检索仍用原始 prompt（不含尺寸句与 global）
     assert request.prompt == "a cat"
