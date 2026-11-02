@@ -27,6 +27,11 @@ TASK_STATUS_ERROR = "error"
 TERMINAL_STATUSES = {TASK_STATUS_SUCCESS, TASK_STATUS_ERROR}
 UNFINISHED_STATUSES = {TASK_STATUS_QUEUED, TASK_STATUS_RUNNING}
 
+# 超时任务恢复轮询时的默认额外等待秒数（与 api 层 ResumePollRequest 默认值一致）
+DEFAULT_RESUME_POLL_EXTRA_TIMEOUT_SECS = 30.0
+# 任务保留期换算：一天对应的秒数
+SECONDS_PER_DAY = 86400
+
 
 
 
@@ -426,7 +431,7 @@ class ImageTaskService:
             retention_days = max(1, int(self.retention_days_getter()))
         except Exception:
             retention_days = 30
-        cutoff = time.time() - retention_days * 86400
+        cutoff = time.time() - retention_days * SECONDS_PER_DAY
         removed_keys = [
             key
             for key, task in self._tasks.items()
@@ -440,7 +445,7 @@ class ImageTaskService:
         self,
         identity: dict[str, object],
         task_id: str,
-        extra_timeout_secs: float = 30.0,
+        extra_timeout_secs: float = DEFAULT_RESUME_POLL_EXTRA_TIMEOUT_SECS,
     ) -> dict[str, Any]:
         """恢复对已超时任务的轮询，额外等待 extra_timeout_secs 秒。"""
         owner = _owner_id(identity)

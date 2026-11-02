@@ -24,6 +24,9 @@ from services.image_storage_service import image_storage_service
 from services.protocol.image_stream import set_image_saver
 from utils.log import logger
 
+# 关停时给后台线程让位退出的等待上限（超时则随进程直接回收）
+BACKEND_THREAD_JOIN_TIMEOUT_SECS = 1
+
 
 def create_app() -> FastAPI:
     app_version = config.app_version
@@ -83,9 +86,9 @@ def create_app() -> FastAPI:
             yield
         finally:
             stop_event.set()
-            # 关停时给后台线程 1 秒让位退出，超时则随进程直接回收
-            thread.join(timeout=1)
-            cleanup_thread.join(timeout=1)
+            # 关停时给后台线程让位退出，超时则随进程直接回收
+            thread.join(timeout=BACKEND_THREAD_JOIN_TIMEOUT_SECS)
+            cleanup_thread.join(timeout=BACKEND_THREAD_JOIN_TIMEOUT_SECS)
             backup_service.stop()
 
     app = FastAPI(title="chatgpt2api", version=app_version, lifespan=lifespan)

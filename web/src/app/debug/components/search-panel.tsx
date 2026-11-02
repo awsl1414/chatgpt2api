@@ -10,6 +10,9 @@ import { cn } from "@/lib/utils";
 
 import type { SearchResult } from "./types";
 
+/** 搜索耗时展示的刷新间隔（毫秒） */
+const ELAPSED_TICK_INTERVAL_MS = 100;
+
 const normalizeMarkdown = (text: string) =>
   text
     .replace(/\ue200url\ue202([^\ue202\ue201]*)\ue202([^\ue201]*)\ue201/g, "[$1]($2)")
@@ -68,7 +71,7 @@ export function SearchPanel() {
 
   useEffect(() => {
     if (!loading || !startedAt) return;
-    const timer = window.setInterval(() => setElapsedMs(Date.now() - startedAt), 100);
+    const timer = window.setInterval(() => setElapsedMs(Date.now() - startedAt), ELAPSED_TICK_INTERVAL_MS);
     return () => window.clearInterval(timer);
   }, [loading, startedAt]);
 

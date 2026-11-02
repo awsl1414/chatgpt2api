@@ -27,6 +27,11 @@ from services.config import BASE_DIR, CONFIG_FILE, DATA_DIR, config, load_backup
 from services.image_storage_service import IMAGE_INDEX_FILE
 from services.image_tags_service import TAGS_FILE
 
+# 停止信号最多等备份线程收尾的秒数，避免长时间阻塞调用方
+BACKUP_THREAD_JOIN_TIMEOUT_SECS = 2
+# 备份调度线程检查「是否到点执行」的轮询间隔（秒）
+BACKUP_SCHEDULER_POLL_INTERVAL_SECS = 30
+
 
 def _utc_now() -> datetime:
     return datetime.now(UTC)
@@ -231,7 +236,7 @@ class CloudflareR2Client:
         query: dict[str, str] | None = None,
         body: bytes = b"",
         extra_headers: dict[str, str] | None = None,
-        timeout: float = 60.0,
+        timeout: float = DEFAULT_REQUEST_TIMEOUT_SECS,
     ):
         object_path = f"/{self.bucket}"
         if key:
@@ -329,8 +334,8 @@ class BackupService:
             thread = self._thread
             self._thread = None
         if thread and thread.is_alive():
-            # 停止信号最多等备份线程 2 秒收尾，避免长时间阻塞调用方
-            thread.join(timeout=2)
+            # 停止信号最多等备份线程收尾，避免长时间阻塞调用方
+            thread.join(timeout=BACKUP_THREAD_JOIN_TIMEOUT_SECS)
 
     def _run(self) -> None:
         while not self._stop_event.is_set():
@@ -338,7 +343,7 @@ class BackupService:
                 self.run_scheduled_backup_if_needed()
             except Exception:
                 pass
-            self._stop_event.wait(30)
+            self._stop_event.wait(BACKUP_SCHEDULER_POLL_INTERVAL_SECS)
 
     def run_scheduled_backup_if_needed(self) -> None:
         settings = config.get_backup_settings()

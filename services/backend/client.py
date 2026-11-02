@@ -43,7 +43,12 @@ from utils.helper import ensure_ok, iter_sse_payloads, new_uuid
 from utils.log import logger
 from utils.pow import build_legacy_requirements_token, build_proof_token, parse_pow_resources
 from utils.turnstile import solve_turnstile_token
-from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS, LONG_REQUEST_TIMEOUT_SECS, SHORT_REQUEST_TIMEOUT_SECS
+from utils.limits import (
+    BLOB_UPLOAD_TIMEOUT_SECS,
+    DEFAULT_REQUEST_TIMEOUT_SECS,
+    LONG_REQUEST_TIMEOUT_SECS,
+    SHORT_REQUEST_TIMEOUT_SECS,
+)
 
 
 DEFAULT_CLIENT_VERSION = "prod-a194cd50d4416d3c0b47c740f206b12ce60f5887"
@@ -54,8 +59,15 @@ DEFAULT_POW_SCRIPT = "https://chatgpt.com/backend-api/sentinel/sdk.js"
 META_REQUEST_TIMEOUT_SECS = 20
 # 会话引导与风控令牌请求超时（bootstrap 首页、sentinel prepare/finalize）
 SESSION_SETUP_TIMEOUT_SECS = 30
-# Azure Blob 直传图片二进制数据超时
-BLOB_UPLOAD_TIMEOUT_SECS = 120
+# conversation_id 丢失时，恢复查找默认拉取的最近对话条数（调用方可覆盖）
+CONVERSATION_RECOVERY_DEFAULT_LIMIT = 5
+# 恢复查找时最多拉取的最近对话条数（按 prompt 匹配的调用方使用）
+CONVERSATION_RECOVERY_LIST_LIMIT = 10
+# 恢复查找列表请求的默认超时（秒）
+CONVERSATION_RECOVERY_TIMEOUT_SECS = 10.0
+# 恢复查找的 updated_at 时间窗（秒）：允许略早于请求开始、以及最多往后 10 分钟
+CONVERSATION_RECOVERY_EARLY_TOLERANCE_SECS = 30
+CONVERSATION_RECOVERY_LATE_TOLERANCE_SECS = 600
 
 
 class OpenAIBackendCore:
@@ -542,7 +554,7 @@ class OpenAIBackendCore:
         ensure_ok(response, path)
         return response.json()
 
-    def _list_recent_conversations(self, limit: int = 5, timeout_secs: float = 10.0) -> list[dict[str, Any]]:
+    def _list_recent_conversations(self, limit: int = CONVERSATION_RECOVERY_DEFAULT_LIMIT, timeout_secs: float = CONVERSATION_RECOVERY_TIMEOUT_SECS) -> list[dict[str, Any]]:
         """列出最近的对话列表，按更新时间倒序。
 
         当 SSE 流太短导致 conversation_id 丢失时，可以通过此方法
@@ -562,7 +574,7 @@ class OpenAIBackendCore:
             logger.debug({"event": "list_conversations_failed", "error": str(exc)})
             return []
 
-    def find_conversation_by_prompt(self, prompt: str, started_at: float, timeout_secs: float = 10.0) -> str:
+    def find_conversation_by_prompt(self, prompt: str, started_at: float, timeout_secs: float = CONVERSATION_RECOVERY_TIMEOUT_SECS) -> str:
         """根据 prompt 和开始时间，从最近对话列表中查找匹配的 conversation_id。
 
         当 SSE 流太短导致 conversation_id 丢失时，使用此方法恢复。
@@ -576,7 +588,7 @@ class OpenAIBackendCore:
         返回：
             匹配的 conversation_id，如果未找到返回空字符串
         """
-        items = self._list_recent_conversations(limit=10, timeout_secs=timeout_secs)
+        items = self._list_recent_conversations(limit=CONVERSATION_RECOVERY_LIST_LIMIT, timeout_secs=timeout_secs)
         if not items:
             return ""
         # 筛选在 started_at 之前或附近创建的对话（最多往前 5 分钟）
@@ -591,7 +603,10 @@ class OpenAIBackendCore:
                 continue
             # 检查时间范围：对话的 updated_at 应该在请求开始时间之后（或附近）
             updated_at = float(item.get("update_time") or item.get("updated_at") or 0)
-            if updated_at and started_at and (updated_at < started_at - 30 or updated_at > started_at + 600):
+            if updated_at and started_at and (
+                updated_at < started_at - CONVERSATION_RECOVERY_EARLY_TOLERANCE_SECS
+                or updated_at > started_at + CONVERSATION_RECOVERY_LATE_TOLERANCE_SECS
+            ):
                 continue
             # 匹配 prompt 关键词
             title = str(item.get("title") or "").lower()

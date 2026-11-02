@@ -26,10 +26,14 @@ from services.protocol import (
     openai_search,
 )
 
+# 单次图片生成请求允许的最大张数（n 参数上限）
+MAX_IMAGE_GENERATION_COUNT = 4
+
+
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
     model: str = "gpt-image-2"
-    n: int = Field(default=1, ge=1, le=4)
+    n: int = Field(default=1, ge=1, le=MAX_IMAGE_GENERATION_COUNT)
     size: str | None = None
     quality: str = "auto"
     response_format: str = "b64_json"

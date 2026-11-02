@@ -8,6 +8,9 @@ import { formatConversationTime } from "@/lib/image-utils";
 import { cn } from "@/lib/utils";
 import type { ImageConversation, ImageTurnStatus, StoredImage, StoredReferenceImage } from "@/store/image-conversations";
 
+/** 存在 loading 图片时，已耗时展示的刷新间隔（毫秒） */
+const ELAPSED_TICK_INTERVAL_MS = 500;
+
 export type ImageLightboxItem = {
   id: string;
   src: string;
@@ -114,7 +117,7 @@ export function ImageResults({ selectedConversation, handlers }: ImageResultsPro
     if (!hasLoadingImages) return;
     const timer = setInterval(() => {
       setCurrentTime(Date.now());
-    }, 500);
+    }, ELAPSED_TICK_INTERVAL_MS);
     return () => clearInterval(timer);
   }, [hasLoadingImages]);
 

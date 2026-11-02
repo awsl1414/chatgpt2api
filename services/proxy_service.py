@@ -14,6 +14,11 @@ from urllib.parse import quote, urlparse
 from curl_cffi.requests import Session
 
 from services.config import config
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
+
+
+# 代理连通性测试的默认超时（秒）
+PROXY_TEST_TIMEOUT_SECS = 15.0
 
 
 FlareSolverrRequestMethod = Callable[[str, bytes, dict[str, str], float], bytes]
@@ -70,9 +75,9 @@ class ProxyRuntimeProfile:
     @property
     def timeout_sec(self) -> int:
         try:
-            return max(1, int(self.clearance.get("timeout_sec") or 60))
+            return max(1, int(self.clearance.get("timeout_sec") or DEFAULT_REQUEST_TIMEOUT_SECS))
         except (OverflowError, TypeError, ValueError):
-            return 60
+            return DEFAULT_REQUEST_TIMEOUT_SECS
 
 
 @dataclass(frozen=True)
@@ -103,7 +108,7 @@ class FlareSolverrClearanceProvider:
         self.flaresolverr_url = str(flaresolverr_url or "").strip().rstrip("/")
         self._request_method = request_method or self._urllib_post
 
-    def get_clearance(self, target_url: str, proxy_url: str = "", timeout_sec: int = 60) -> ClearanceBundle | None:
+    def get_clearance(self, target_url: str, proxy_url: str = "", timeout_sec: int = DEFAULT_REQUEST_TIMEOUT_SECS) -> ClearanceBundle | None:
         if not self.flaresolverr_url:
             return None
 
@@ -452,8 +457,10 @@ def _status_codes_tuple(value: object) -> tuple[int, ...]:
             code = int(item)
         except (OverflowError, TypeError, ValueError):
             continue
+        # 100–599 是 HTTP 状态码的合法取值范围
         if 100 <= code <= 599 and code not in codes:
             codes.append(code)
+    # 空配置（或全部非法）时退回 403
     return tuple(codes or [403])
 
 
@@ -461,7 +468,8 @@ def _coerce_timeout(value: object) -> float:
     try:
         timeout = float(value)
     except (OverflowError, TypeError, ValueError):
-        timeout = 60.0
+        # 无法解析时退回默认请求超时，再统一施加下限
+        timeout = float(DEFAULT_REQUEST_TIMEOUT_SECS)
     return max(1.0, timeout)
 
 
@@ -537,7 +545,7 @@ def _redact_url_credentials(text: str) -> str:
     )
 
 
-def test_proxy(url: str = "", *, timeout: float = 15.0) -> dict:
+def test_proxy(url: str = "", *, timeout: float = PROXY_TEST_TIMEOUT_SECS) -> dict:
     candidate = normalize_proxy_url(_clean(url))
     proxy_source = "input"
     if not candidate:

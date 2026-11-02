@@ -52,6 +52,7 @@ from utils.helper import (
     is_supported_image_model,
     split_image_model,
 )
+from utils.limits import QUICK_QUERY_TIMEOUT_SECS
 from utils.log import logger
 
 REFERENCED_IMAGE_IDS_RE = re.compile(r'"referenced_image_ids"\s*:\s*\[([^\]]+)\]')
@@ -60,6 +61,15 @@ REFERENCED_IMAGE_IDS_RE = re.compile(r'"referenced_image_ids"\s*:\s*\[([^\]]+)\]
 TOOL_PARAMS_JSON_RE = re.compile(
     r'\{\s*"size"\s*:\s*"\d+x\d+"\s*,\s*"n"\s*:\s*\d+\s*\}'
 )
+
+# 文本回复/兜底重试路径的轮询超时下限：图片异步生成可能需要数分钟
+IMAGE_RETRY_POLL_TIMEOUT_SECS = 300
+# 轮询失败重试的退避基数（按次数递增：30s、60s、90s）
+POLL_RETRY_BACKOFF_BASE_SECS = 30.0
+# /backend-api/tasks 详细错误查询的默认超时（秒）
+TASK_DETAIL_QUERY_TIMEOUT_SECS = 10.0
+# 查询 tasks 前等待任务创建的默认秒数（0 表示跳过等待）
+TASK_CREATE_WAIT_SECS = 2.0
 
 # 图片落盘/上传回调：`(图片字节, base_url) -> 可访问 URL`。
 # 由上层组装入口通过 set_image_saver 注入，协议层不直接依赖存储实现。
@@ -191,8 +201,8 @@ class ImageOutput:
 def _get_detailed_error_from_tasks(
     backend: OpenAIBackendAPI,
     conversation_id: str,
-    timeout_secs: float = 10.0,
-    wait_secs: float = 2.0,
+    timeout_secs: float = TASK_DETAIL_QUERY_TIMEOUT_SECS,
+    wait_secs: float = TASK_CREATE_WAIT_SECS,
 ) -> str:
     """从 /backend-api/tasks/ 接口获取结构化错误信息。
 
@@ -276,7 +286,7 @@ def _recover_conversation_id(
     但图片已在上游异步生成，此时通过列出最近对话恢复。
     """
     try:
-        recovered_id = backend.find_conversation_by_prompt(prompt, time.time(), timeout_secs=5.0)
+        recovered_id = backend.find_conversation_by_prompt(prompt, time.time(), timeout_secs=QUICK_QUERY_TIMEOUT_SECS)
     except Exception as exc:
         logger.warning({
             "event": failed_event,
@@ -349,7 +359,7 @@ def _poll_image_results_with_retry(
             })
             # 如果还有重试次数且不是超时/内容违规错误，继续重试（递增退避：30s, 60s, 90s）
             if poll_attempt < max_retries and not isinstance(exc, (ImagePollTimeoutError, ImageContentPolicyError)):
-                backoff = 30.0 * poll_attempt
+                backoff = POLL_RETRY_BACKOFF_BASE_SECS * poll_attempt
                 logger.info({
                     "event": f"{log_prefix}_poll_retry",
                     "conversation_id": conversation_id,
@@ -500,7 +510,7 @@ def _resolve_stream_state(
     # 此时应继续轮询图片。
     detailed_error = ""
     if not file_ids and not sediment_ids and conversation_id:
-        detailed_error = _get_detailed_error_from_tasks(backend, conversation_id, timeout_secs=5.0, wait_secs=1.0)
+        detailed_error = _get_detailed_error_from_tasks(backend, conversation_id, timeout_secs=QUICK_QUERY_TIMEOUT_SECS, wait_secs=1.0)
         if detailed_error and not should_poll_for_image and not is_text_reply:
             logger.info({
                 "event": "image_task_error_before_poll",
@@ -521,7 +531,7 @@ def _resolve_stream_state(
     poll_timeout = config.image_poll_timeout_secs
     if is_text_reply and conversation_id:
         # 文本回复场景下图片可能仍在异步生成，使用更长超时（默认 120s → 额外 180s = 300s）
-        poll_timeout = max(poll_timeout, 300)
+        poll_timeout = max(poll_timeout, IMAGE_RETRY_POLL_TIMEOUT_SECS)
         logger.info({
             "event": "image_text_reply_extended_poll",
             "conversation_id": conversation_id,
@@ -606,7 +616,7 @@ def _message_branch_outputs(
         # 使用 300s 超时并允许多次重试，避免因临时网络问题提前退出。
         _poll_image_results_with_retry(
             backend, conversation_id, file_ids, sediment_ids,
-            retry_poll_timeout=max(config.image_poll_timeout_secs, 300),
+            retry_poll_timeout=max(config.image_poll_timeout_secs, IMAGE_RETRY_POLL_TIMEOUT_SECS),
             max_retries=3,
             log_prefix="image_model_text_reply",
         )
@@ -662,10 +672,10 @@ def _fallback_outputs(
         # 使用 300s 超时并允许多次重试，避免因临时网络问题或图片尚未提交而提前退出。
         _poll_image_results_with_retry(
             backend, conversation_id, file_ids, sediment_ids,
-            retry_poll_timeout=max(config.image_poll_timeout_secs, 300),
+            retry_poll_timeout=max(config.image_poll_timeout_secs, IMAGE_RETRY_POLL_TIMEOUT_SECS),
             max_retries=3,
             log_prefix="image_stream_retry_poll",
-            wait_before_attempt=lambda attempt: min(30.0 * attempt, config.image_poll_initial_wait_secs * attempt),
+            wait_before_attempt=lambda attempt: min(POLL_RETRY_BACKOFF_BASE_SECS * attempt, config.image_poll_initial_wait_secs * attempt),
         )
 
         if file_ids or sediment_ids:

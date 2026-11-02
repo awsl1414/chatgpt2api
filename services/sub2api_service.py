@@ -25,6 +25,10 @@ SUB2API_CONFIG_FILE = DATA_DIR / "sub2api_config.json"
 # Cached JWT per server to avoid re-login on every list/import call.
 # Token lifetime on sub2api defaults to 24h; we refresh 5 min before expiry.
 _TOKEN_REFRESH_SKEW = 5 * 60
+# 上游未返回 expires_in 时的默认 token 有效期（秒）
+_DEFAULT_TOKEN_EXPIRES_IN_SECS = 3600
+# token 有效期的下限（秒），避免上游返回极小值导致反复登录
+_MIN_TOKEN_EXPIRES_IN_SECS = 60
 
 
 def _new_id() -> str:
@@ -211,8 +215,8 @@ def _login(base_url: str, email: str, password: str) -> tuple[str, float]:
     if not token:
         raise Sub2apiError("sub2api login did not return access_token")
 
-    expires_in = int(body.get("expires_in") or 3600)
-    expires_at = time.time() + max(60, expires_in) - _TOKEN_REFRESH_SKEW
+    expires_in = int(body.get("expires_in") or _DEFAULT_TOKEN_EXPIRES_IN_SECS)
+    expires_at = time.time() + max(_MIN_TOKEN_EXPIRES_IN_SECS, expires_in) - _TOKEN_REFRESH_SKEW
     return token, expires_at
 
 

@@ -13,3 +13,9 @@ DEFAULT_REQUEST_TIMEOUT_SECS = 60
 
 # 长请求超时（SSE 长流式对话、大文件下载等）
 LONG_REQUEST_TIMEOUT_SECS = 300
+
+# 轻量辅助查询的短超时（tasks 状态检查、最近对话恢复等，失败可降级）
+QUICK_QUERY_TIMEOUT_SECS = 5.0
+
+# Azure Blob 直传图片二进制数据超时（client 与 editable_file 共用）
+BLOB_UPLOAD_TIMEOUT_SECS = 120
