@@ -2214,7 +2214,13 @@ components:
         prompt: { type: string, minLength: 1 }
         model: { type: string, default: gpt-image-2 }
         n: { type: integer, minimum: 1, maximum: 4, default: 1 }
-        size: { type: [string, "null"] }
+        size:
+          type: [string, "null"]
+          description: |
+            `宽x高`（如 `1024x1536`）。**仅 `gpt-image-2` 生效**：该模型的接口 size
+            能决定出图宽高比。`codex-gpt-image-*` 系列（含 plus-/team-/pro- 前缀）
+            完全忽略该字段，宽高比只能由提示词里的比例/像素决定。任何模型都不兑现
+            绝对像素，出图面积恒定归一化到约 1,572,864 px（见 docs/feature-status.en.md）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2232,7 +2238,11 @@ components:
         n:
           type: string
           description: 字符串形式的整数，取值 1-4（服务端按 int 转换后校验）。
-        size: { type: string }
+        size:
+          type: string
+          description: |
+            语义同 `ImageGenerationRequest.size`：**仅 `gpt-image-2` 生效**，
+            `codex-gpt-image-*` 系列忽略该字段（宽高比须写进提示词）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream:
@@ -2252,7 +2262,11 @@ components:
         prompt: { type: string }
         model: { type: string, default: gpt-image-2 }
         n: { type: integer, minimum: 1, maximum: 4 }
-        size: { type: [string, "null"] }
+        size:
+          type: [string, "null"]
+          description: |
+            语义同 `ImageGenerationRequest.size`：**仅 `gpt-image-2` 生效**，
+            `codex-gpt-image-*` 系列忽略该字段（宽高比须写进提示词）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2341,7 +2355,11 @@ components:
         client_task_id: { type: string, minLength: 1 }
         prompt: { type: string, minLength: 1 }
         model: { type: string, default: gpt-image-2 }
-        size: { type: [string, "null"] }
+        size:
+          type: [string, "null"]
+          description: |
+            语义同 `ImageGenerationRequest.size`：**仅 `gpt-image-2` 生效**，
+            `codex-gpt-image-*` 系列忽略该字段（宽高比须写进提示词）。
         quality: { type: string, default: auto }
 
     ImageTask:
