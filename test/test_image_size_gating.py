@@ -43,7 +43,7 @@ class BuildImagePromptTests(unittest.TestCase):
             size_enabled=True,
         )
         self.assertIn("画一只猫", plan.prompt)
-        self.assertIn("输出图片尺寸为 1792x1024。", plan.prompt)
+        self.assertIn("输出图片尺寸为 1792x1024，横版。", plan.prompt)
         self.assertIn("输出图片质量为 high。", plan.prompt)
 
     def test_keeps_prompt_without_size(self) -> None:
@@ -79,7 +79,7 @@ class ConversationEventsSizeGatingTests(unittest.TestCase):
             quality="high",
             size_enabled=True,
         )
-        self.assertIn("输出图片尺寸为 1792x1024。", prompt)
+        self.assertIn("输出图片尺寸为 1792x1024，横版。", prompt)
         self.assertIn("输出图片质量为 high。", prompt)
 
     def test_image_model_keeps_prompt_without_size_enabled(self) -> None:

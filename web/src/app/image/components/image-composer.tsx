@@ -13,8 +13,7 @@ import {
   NORMALIZED_OUTPUT_AREA_LABEL,
   aspectOptionNote,
   aspectOptions,
-  isAspectOptionDisabled,
-  modelUsesApiSize,
+  modelUsesPromptSize,
 } from "@/lib/image-composer-options";
 import { cn } from "@/lib/utils";
 import type { ImageComposerOptions } from "@/app/image/hooks/use-persisted-composer-options";
@@ -115,13 +114,13 @@ export function ImageComposer({
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
   const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
-  const usesApiSize = modelUsesApiSize(imageModel);
-  /** 比例选择区的说明文案：只陈述实测行为，不写「支持/不支持」的含糊说法 */
-  const aspectHelpText = !usesApiSize
-    ? "该模型忽略尺寸参数，出图方向由提示词决定；比例选择已置灰"
-    : imageRatio === "auto"
+  const usesPromptSize = modelUsesPromptSize(imageModel);
+  /** 比例选择区的说明文案：只陈述实测行为——比例兑现、像素不兑现 */
+  const aspectHelpText = usesPromptSize
+    ? imageRatio === "auto"
       ? `未指定比例，由模型决定；实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}`
-      : `按比例出图，实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}；2K/4K 只影响比例`;
+      : `按所选比例出图，实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}（2K/4K 档只兑现比例，不兑现像素）`
+    : "该模型不支持按尺寸出图";
 
   useEffect(() => {
     if (!isSizeMenuOpen) {
@@ -413,47 +412,33 @@ export function ImageComposer({
                             尺寸 <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                            <div
-                              className={cn(
-                                "flex items-center rounded-lg px-3 py-1.5 text-sm",
-                                usesApiSize ? "bg-stone-100 text-stone-700" : "bg-stone-50 text-stone-300",
-                              )}
-                            >
+                            <div className="flex items-center rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
                               <span className="mr-2 text-stone-500">W</span>
                               <Input
                                 type="number"
                                 inputMode="numeric"
                                 min="1"
                                 value={imageWidth}
-                                disabled={!usesApiSize}
                                 onChange={(event) => onOptionsChange({ imageWidth: event.target.value })}
-                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium shadow-none focus-visible:ring-0"
+                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
                               />
                             </div>
                             <span className="text-stone-400">×</span>
-                            <div
-                              className={cn(
-                                "flex items-center rounded-lg px-3 py-1.5 text-sm",
-                                usesApiSize ? "bg-stone-100 text-stone-700" : "bg-stone-50 text-stone-300",
-                              )}
-                            >
+                            <div className="flex items-center rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
                               <span className="mr-2 text-stone-500">H</span>
                               <Input
                                 type="number"
                                 inputMode="numeric"
                                 min="1"
                                 value={imageHeight}
-                                disabled={!usesApiSize}
                                 onChange={(event) => onOptionsChange({ imageHeight: event.target.value })}
-                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium shadow-none focus-visible:ring-0"
+                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
                               />
                             </div>
                           </div>
-                          {!usesApiSize ? (
-                            <p className="mt-2 text-xs text-stone-400">
-                              该模型忽略尺寸参数，宽高比请在提示词中写明（如「16:9 横版」）
-                            </p>
-                          ) : null}
+                          <p className="mt-2 text-xs text-stone-400">
+                            W/H 决定宽高比；所有模型实际输出 {NORMALIZED_OUTPUT_AREA_LABEL}
+                          </p>
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
@@ -463,29 +448,23 @@ export function ImageComposer({
                             {aspectOptions.map((option) => {
                               const active = option.ratio === imageRatio && option.tier === imageTier && option.width === imageWidth && option.height === imageHeight;
                               const Icon = aspectIcons[option.ratio];
-                              const disabled = isAspectOptionDisabled(imageModel, option);
                               return (
                                 <button
                                   key={`${option.ratio}-${option.tier}-${option.label}`}
                                   type="button"
-                                  disabled={disabled}
                                   title={aspectOptionNote(imageModel, option) ?? undefined}
                                   className={cn(
                                     "flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
                                     active && "border-stone-950",
-                                    disabled && "cursor-not-allowed border-stone-100 bg-stone-50 text-stone-300 hover:border-stone-100 hover:bg-stone-50",
                                   )}
-                                  onClick={() => {
-                                    if (disabled) {
-                                      return;
-                                    }
+                                  onClick={() =>
                                     onOptionsChange({
                                       imageRatio: option.ratio,
                                       imageTier: option.tier,
                                       imageWidth: option.width,
                                       imageHeight: option.height,
-                                    });
-                                  }}
+                                    })
+                                  }
                                 >
                                   {Icon ? (
                                     <>

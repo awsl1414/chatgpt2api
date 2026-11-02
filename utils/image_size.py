@@ -1,17 +1,21 @@
 """生图模型的尺寸遵循能力表（唯一事实源）与尺寸文本解析。
 
-本模块回答一个问题：**给定模型，请求里的 `size` 到底该走哪条通道**。结论全部
-来自实测（工作区 `docs/size-verification.md`，103 条有效样本），不是推测：
+结论全部来自实测（工作区 `docs/size-verification.md`，103 条有效样本）：
 
-- `gpt-image-2`（picture_v2 链路）：接口 `size` 能决定宽高比（提示词里的比例/像素
-  同样生效；两者冲突时上游一律落横版）；
-- `codex-gpt-image-*` 全系列（含 plus-/team-/pro- 前缀）：接口 `size` **完全不生效**，
-  唯一有效通道是提示词里显式写出的比例或像素；
-- 所有模型都不兑现绝对像素：出图面积恒定归一化到 1,572,864 px（= 1024×1536）。
+1. **比例对所有模型都有效**：提示词里显式写出的尺寸或比例能决定出图宽高比
+   （§4.3：四个模型写 `1792x1024 pixels` / `16:9` 全部生效；§5 逐档验证了
+   2K/4K 档位提供的 1:1、16:9、9:16 比例同样精确兑现）。
+2. **绝对像素对所有模型都无效**：出图面积恒定归一化到 1,572,864 px
+   （= 1024×1536，§8.3）。请求 4K 也只兑现比例——这是**标注**问题，不是禁用问题。
+3. **codex 的上游工具字段 `tools[0].size` 被完全忽略**（§3：20+ 样本，含 plus-
+   前缀）。它进得去、出不来，因此不该发送。
+4. picture_v2 的上游 payload 里**根本没有 size 键**（§8.2），尺寸只以中文文本
+   进提示词。
 
-因此调用方必须先查本表再决定「要不要把 size 透传给上游」「要不要把尺寸写进提示词」，
-不得在链路里硬编码模型名判断。前端 `web/src/lib/image-composer-options.ts` 持有
-语义一一对应的 `IMAGE_MODEL_SIZE_CAPABILITIES`，两侧改动必须同步。
+由此得到唯一的设计：**尺寸意图统一写进提示词**（所有模型共用同一条通道），
+codex 额外不发送 `tools[0].size`。前端与后端共享同一份语义（前端见
+`web/src/lib/image-composer-options.ts` 的 `IMAGE_MODEL_SIZE_CAPABILITIES`），
+两侧改动必须同步。
 
 依赖纪律：本模块只依赖 `utils.helper`（模型名解析），不依赖 services。
 """
@@ -22,6 +26,9 @@ from dataclasses import dataclass
 
 from utils.helper import split_image_model
 
+# 出图面积归一化基准：1024x1536 = 1,572,864 px（实测所有模型恒定，见 §8.3）
+NORMALIZED_OUTPUT_AREA_PX = 1_572_864
+
 # `1024x1536` / `1024×1536` / `1024 x 1536` 三种写法都接受
 _SIZE_PAIR_RE = re.compile(r"^\s*(\d{2,5})\s*[x×]\s*(\d{2,5})\s*$", re.IGNORECASE)
 
@@ -31,26 +38,38 @@ class ImageSizeCapability:
     """单个生图模型对尺寸请求的遵循能力（实测结论的结构化表达）。
 
     字段语义：
-    - `api_size_effective`：请求体 `size` 字段能否决定出图宽高比。为 False 时
-      **不得**把该字段透传给上游（上游会收到但完全忽略，只会让日志与抓包误导人）；
     - `prompt_size_effective`：提示词里显式写出的尺寸/比例能否决定出图宽高比。
-      为 True 时尺寸意图应写进提示词（codex 系列这是唯一有效通道）。
+      这是**所有已测模型唯一真正有效**的通道，服务端据此把请求 `size` 注入提示词；
+    - `upstream_tool_size_effective`：上游工具层 `tools[0].size` 字段是否被采纳。
+      为 False 时不得发送（codex 收到也会忽略，只会让抓包与日志误导人）。
 
-    两条通道都**不**兑现绝对像素：任何取值最终都按比例归一化到约 1.57M 像素。
+    任何字段都不代表绝对像素可兑现：出图面积恒为 `NORMALIZED_OUTPUT_AREA_PX`。
     """
 
-    api_size_effective: bool
     prompt_size_effective: bool
+    upstream_tool_size_effective: bool
 
 
 # 键为「去掉 plus-/team-/pro- 前缀后的基础模型名」，与 `utils.helper.BASE_IMAGE_MODELS` 对齐。
 IMAGE_SIZE_CAPABILITIES: dict[str, ImageSizeCapability] = {
-    # picture_v2：接口 size 生效，提示词尺寸也生效（冲突时上游落横版，见 size-verification.md §4.4）
-    "gpt-image-2": ImageSizeCapability(api_size_effective=True, prompt_size_effective=True),
-    # codex/responses 工具层：tools[0].size 进得去、出不来；只有提示词尺寸有效
-    "codex-gpt-image-2": ImageSizeCapability(api_size_effective=False, prompt_size_effective=True),
-    "codex-gpt-image-2.5-flare": ImageSizeCapability(api_size_effective=False, prompt_size_effective=True),
-    "codex-gpt-image-2.5-sunburst": ImageSizeCapability(api_size_effective=False, prompt_size_effective=True),
+    # picture_v2：payload 无 size 键，尺寸只以中文文本进提示词（§8.2）
+    "gpt-image-2": ImageSizeCapability(
+        prompt_size_effective=True,
+        upstream_tool_size_effective=False,
+    ),
+    # codex/responses 工具层：tools[0].size 收到但被忽略（§3），只有提示词有效（§4.3）
+    "codex-gpt-image-2": ImageSizeCapability(
+        prompt_size_effective=True,
+        upstream_tool_size_effective=False,
+    ),
+    "codex-gpt-image-2.5-flare": ImageSizeCapability(
+        prompt_size_effective=True,
+        upstream_tool_size_effective=False,
+    ),
+    "codex-gpt-image-2.5-sunburst": ImageSizeCapability(
+        prompt_size_effective=True,
+        upstream_tool_size_effective=False,
+    ),
 }
 
 
@@ -62,16 +81,16 @@ def image_size_capability(model: object) -> ImageSizeCapability | None:
     return IMAGE_SIZE_CAPABILITIES.get(base_model)
 
 
-def image_size_uses_api_field(model: object) -> bool:
-    """接口 `size` 字段是否对该模型生效（不生效时不得向上游透传该字段）。"""
-    capability = image_size_capability(model)
-    return bool(capability and capability.api_size_effective)
-
-
 def image_size_uses_prompt(model: object) -> bool:
-    """尺寸意图是否应写进提示词（codex 系列唯一有效通道，picture_v2 亦生效）。"""
+    """尺寸意图是否应写进提示词（所有已测图片模型均为 True）。"""
     capability = image_size_capability(model)
     return bool(capability and capability.prompt_size_effective)
+
+
+def image_size_uses_upstream_tool_field(model: object) -> bool:
+    """上游工具层 `size` 字段是否应发送（codex 系列为 False）。"""
+    capability = image_size_capability(model)
+    return bool(capability and capability.upstream_tool_size_effective)
 
 
 def parse_size_pair(size: object) -> tuple[int, int] | None:

@@ -2217,10 +2217,11 @@ components:
         size:
           type: [string, "null"]
           description: |
-            `宽x高`（如 `1024x1536`）。**仅 `gpt-image-2` 生效**：该模型的接口 size
-            能决定出图宽高比。`codex-gpt-image-*` 系列（含 plus-/team-/pro- 前缀）
-            完全忽略该字段，宽高比只能由提示词里的比例/像素决定。任何模型都不兑现
-            绝对像素，出图面积恒定归一化到约 1,572,864 px（见 docs/feature-status.en.md）。
+            `宽x高`（如 `1024x1536`）。服务端把该值转成提示词里的「尺寸 + 方向」语句
+            （如「输出图片尺寸为 1792x1024，横版。」），这是实测中**所有模型唯一稳定兑现
+            比例**的通道。`codex-gpt-image-*` 系列（含 plus-/team-/pro- 前缀）不会向上游
+            发送 `tools[0].size`——该字段被上游完全忽略。任何模型都不兑现绝对像素，
+            出图面积恒定归一化到约 1,572,864 px（见 docs/feature-status.en.md）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2241,8 +2242,8 @@ components:
         size:
           type: string
           description: |
-            语义同 `ImageGenerationRequest.size`：**仅 `gpt-image-2` 生效**，
-            `codex-gpt-image-*` 系列忽略该字段（宽高比须写进提示词）。
+            语义同 `ImageGenerationRequest.size`：服务端转为提示词里的比例语句，
+            这是所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream:
@@ -2265,8 +2266,8 @@ components:
         size:
           type: [string, "null"]
           description: |
-            语义同 `ImageGenerationRequest.size`：**仅 `gpt-image-2` 生效**，
-            `codex-gpt-image-*` 系列忽略该字段（宽高比须写进提示词）。
+            语义同 `ImageGenerationRequest.size`：服务端转为提示词里的比例语句，
+            这是所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2358,8 +2359,8 @@ components:
         size:
           type: [string, "null"]
           description: |
-            语义同 `ImageGenerationRequest.size`：**仅 `gpt-image-2` 生效**，
-            `codex-gpt-image-*` 系列忽略该字段（宽高比须写进提示词）。
+            语义同 `ImageGenerationRequest.size`：服务端转为提示词里的比例语句，
+            这是所有模型唯一稳定兑现比例的通道；绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
 
     ImageTask:

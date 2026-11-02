@@ -2,12 +2,21 @@ import type { ImageModel } from "@/lib/api/types";
 
 /**
  * 图片生成参数的纯数据与纯函数（审计 F-中5）：
- * 宽高比预设、模型尺寸能力表、切换模型时的尺寸回退。
+ * 宽高比预设、模型尺寸能力表、尺寸档位的说明文案。
  * 不依赖 React 与 UI 组件，供 useImageComposer 与 ImageComposer 共享，
  * 避免 hook 反向依赖页面组件。
  *
  * 能力语义与后端 `utils/image_size.py` 的 `IMAGE_SIZE_CAPABILITIES` 一一对应，
  * 依据是工作区 `docs/size-verification.md` 的 103 条真实出图实测。两侧必须同步修改。
+ *
+ * 核心事实（决定这里所有规则）：
+ * - **比例对所有模型都有效**：请求的尺寸/比例由服务端写进提示词，四个已测模型
+ *   都会按该比例出图（§4.3、§5 逐档验证）；
+ * - **绝对像素对所有模型都无效**：出图面积恒定约 1.57M 像素（§8.3）；
+ * - **codex 的上游工具字段 `size` 被忽略**（§3），但它的提示词比例有效。
+ *
+ * 因此：**没有任何比例档位应该被置灰**——比例是真能兑现的能力。2K/4K 档位
+ * 需要标注的只是「像素不兑现」，不是禁用。
  */
 
 /** 一个宽高比预设：ratio/tier 为持久化选项，width/height 为提交给后端的 size */
@@ -23,22 +32,24 @@ export type AspectOption = {
 
 /**
  * 单个模型对尺寸请求的遵循能力（与后端能力表逐字段对应）。
- * - `apiSizeEffective`：提交的 `size` 能否决定出图宽高比；
- * - `promptSizeEffective`：提示词里写出的尺寸/比例能否决定出图宽高比。
+ * - `promptSizeEffective`：提示词里的尺寸/比例能否决定出图宽高比（所有已测模型为 true），
+ *   前端据此决定比例选择器是否可用与说明文案；
+ * - `upstreamToolSizeEffective`：上游工具层 `tools[0].size` 是否被采纳（codex 系列为 false）。
+ *   该字段前端不直接消费，保留是为了与后端 `ImageSizeCapability` 保持逐字段可对照。
  *
- * 两条通道都不兑现绝对像素：所有模型出图面积恒定约 1.57M 像素。
+ * 两者都不代表绝对像素可兑现：出图面积恒约 1.57M 像素。
  */
 export type ImageSizeCapability = {
-  apiSizeEffective: boolean;
   promptSizeEffective: boolean;
+  upstreamToolSizeEffective: boolean;
 };
 
 /** 后端 `utils/image_size.py` 的镜像：键为去掉 plus-/team-/pro- 前缀的基础模型名 */
 export const IMAGE_MODEL_SIZE_CAPABILITIES: Record<string, ImageSizeCapability> = {
-  "gpt-image-2": { apiSizeEffective: true, promptSizeEffective: true },
-  "codex-gpt-image-2": { apiSizeEffective: false, promptSizeEffective: true },
-  "codex-gpt-image-2.5-flare": { apiSizeEffective: false, promptSizeEffective: true },
-  "codex-gpt-image-2.5-sunburst": { apiSizeEffective: false, promptSizeEffective: true },
+  "gpt-image-2": { promptSizeEffective: true, upstreamToolSizeEffective: false },
+  "codex-gpt-image-2": { promptSizeEffective: true, upstreamToolSizeEffective: false },
+  "codex-gpt-image-2.5-flare": { promptSizeEffective: true, upstreamToolSizeEffective: false },
+  "codex-gpt-image-2.5-sunburst": { promptSizeEffective: true, upstreamToolSizeEffective: false },
 };
 
 const PLAN_PREFIXES = ["plus-", "team-", "pro-"];
@@ -55,20 +66,12 @@ export function imageSizeCapability(model: ImageModel): ImageSizeCapability | nu
   return IMAGE_MODEL_SIZE_CAPABILITIES[baseImageModel(model)] ?? null;
 }
 
-/** 提交的 `size` 是否对该模型生效 */
-export function modelUsesApiSize(model: ImageModel): boolean {
-  return imageSizeCapability(model)?.apiSizeEffective ?? false;
-}
-
-/** 尺寸意图是否必须写进提示词（codex 系列唯一有效通道） */
+/** 提示词里的比例对该模型是否有效（所有已测图片模型均为 true） */
 export function modelUsesPromptSize(model: ImageModel): boolean {
   return imageSizeCapability(model)?.promptSizeEffective ?? false;
 }
 
-/** 所有模型统一的出图面积（实测恒定 1,572,864 px = 1024×1536） */
-export const NORMALIZED_OUTPUT_AREA_PX = 1_572_864;
-
-/** 出图面积的中文近似说法，用于 UI 说明 */
+/** 出图面积的中文近似说法，用于 UI 说明（实测所有模型恒定约 1.57M 像素 = 1024×1536） */
 export const NORMALIZED_OUTPUT_AREA_LABEL = "约 1.57M 像素";
 
 export const aspectOptions: readonly AspectOption[] = [
@@ -88,88 +91,32 @@ export const aspectOptions: readonly AspectOption[] = [
 ];
 
 /**
- * 该比例档位在给定模型下是否可选。
- *
- * 实测结论（size-verification.md §5、§7）：
- * - codex 系列完全无视 `size`，整组比例选择器都应置灰（方向由提示词决定）；
- * - 2K/4K 对**所有**模型都只兑现比例、不兑现像素，因此整组置灰，
- *   避免用户以为能出 2K/4K 像素。
- */
-export function isAspectOptionDisabled(model: ImageModel, option: AspectOption): boolean {
-  if (option.tier === "auto") {
-    return false;
-  }
-  if (!modelUsesApiSize(model)) {
-    return true;
-  }
-  return option.tier !== "1k";
-}
-
-/** 当前模型下可选的档位列表（供 UI 与回退逻辑共用） */
-export function selectableAspectOptions(model: ImageModel): readonly AspectOption[] {
-  return aspectOptions.filter((option) => !isAspectOptionDisabled(model, option));
-}
-
-/**
  * 该档位在当前模型下的说明文案；返回 null 表示无需额外提示。
- * 文案直接对应用户能观察到的事实，不做「支持/不支持」的含糊表述。
- */
-export function aspectOptionNote(model: ImageModel, option: AspectOption): string | null {
-  if (option.tier === "auto") {
-    return null;
-  }
-  if (!modelUsesApiSize(model)) {
-    return "该模型不支持尺寸参数，出图方向由提示词决定";
-  }
-  if (option.tier !== "1k") {
-    return `2K/4K 只影响比例，实际约 ${NORMALIZED_OUTPUT_AREA_LABEL}`;
-  }
-  return null;
-}
-
-/**
- * 切换模型时收敛当前档位到新模型可用的档位。
+ * 文案直接对应用户能观察到的事实：比例兑现，像素不兑现。
  *
- * - codex 系列不接受 `size`：统一落到 `auto`（不再伪造一个无效尺寸）；
- * - picture_v2：2K/4K 回退到同比例 1K 档，无匹配则回 auto。
- *
- * @returns null 表示当前档位在新模型下仍可用，无需调整
+ * 注意：**没有任何档位需要置灰**。比例是实测中所有模型都稳定兑现的能力
+ * （服务端把请求尺寸写成提示词里的比例语句），2K/4K 的差异只是绝对像素
+ * 不兑现——那是标注问题，不是可用性问题。
  */
-export function aspectFallbackForModel(
-  model: ImageModel,
-  ratio: string,
-  tier: string,
-): AspectOption | null {
-  if (tier === "auto") {
+export function aspectOptionNote(_model: ImageModel, option: AspectOption): string | null {
+  if (option.tier === "auto" || option.tier === "1k") {
     return null;
   }
-  if (!modelUsesApiSize(model)) {
-    return aspectOptions.find((option) => option.tier === "auto") ?? null;
-  }
-  if (tier === "1k") {
-    return null;
-  }
-  return (
-    aspectOptions.find((option) => option.tier === "1k" && option.ratio === ratio) ??
-    aspectOptions.find((option) => option.tier === "auto") ??
-    null
-  );
+  // 2K/4K 档位：比例精确兑现，但绝对像素恒为 1.57M（§5 实测）
+  return `${option.ratio} 比例有效，实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}（不兑现 ${option.tier.toUpperCase()} 像素）`;
 }
 
 /**
  * 生成提交给后端的 size 字符串。
  *
- * 模型不接受 `size` 时返回 `undefined`（不提交该字段，而不是提交一个无效值）。
- * 接受 `size` 时按当前 W/H 提交：`auto` 档位同样使用输入框里的值，
- * 因此用户手动改过宽高后不会因为没选比例档而丢失。
+ * 所有模型都提交：请求 `size` 由服务端统一写进提示词，是唯一被证实的比例通道。
+ * 即便 codex 的上游工具字段会忽略它，后端仍需要这个值来构造提示词——
+ * 不提交等于放弃比例控制。
  */
 export function resolveRequestSize(
-  model: ImageModel,
+  _model: ImageModel,
   width: string,
   height: string,
-): string | undefined {
-  if (!modelUsesApiSize(model)) {
-    return undefined;
-  }
+): string {
   return `${width || 1024}x${height || 1024}`;
 }

@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { fetchModels } from "@/lib/api/models";
 import type { ImageModel } from "@/lib/api/types";
-import { aspectFallbackForModel } from "@/lib/image-composer-options";
 import { clampImageCount, filterImageModels, normalizeStoredImageModel } from "@/lib/image-utils";
 import {
   IMAGE_COUNT_STORAGE_KEY,
@@ -163,34 +162,11 @@ export function usePersistedComposerOptions(): UsePersistedComposerOptionsResult
     }
   }, [parsedCount]);
 
-  // 持久化读回或异步加载模型后，收敛到该模型可用的档位：
-  // 用户上次可能停在 2K 档，或上次模型是 codex 而当前已是 picture_v2（反之亦然）。
-  useEffect(() => {
-    const fallback = aspectFallbackForModel(imageModel, imageRatio, imageTier);
-    if (!fallback) {
-      return;
-    }
-    setImageRatio(fallback.ratio);
-    setImageTier(fallback.tier);
-    setImageWidth(fallback.width);
-    setImageHeight(fallback.height);
-  }, [imageModel, imageRatio, imageTier]);
-
-  // 切换模型时同步校验尺寸：新模型不接受 size（codex 系列）时回退到 auto，
-  // 否则把 2K/4K 档回退到同比例 1K 档（见 lib/image-composer-options）
-  const handleImageModelChange = useCallback(
-    (model: ImageModel) => {
-      setImageModel(model);
-      const fallback = aspectFallbackForModel(model, imageRatio, imageTier);
-      if (fallback) {
-        setImageRatio(fallback.ratio);
-        setImageTier(fallback.tier);
-        setImageWidth(fallback.width);
-        setImageHeight(fallback.height);
-      }
-    },
-    [imageRatio, imageTier],
-  );
+  // 切换模型不需要调整尺寸档位：所有模型的比例档都有效（比例经提示词兑现），
+  // 没有任何档位因模型而不可用，用户的选择原样保留。
+  const handleImageModelChange = useCallback((model: ImageModel) => {
+    setImageModel(model);
+  }, []);
 
   return {
     imageCount,

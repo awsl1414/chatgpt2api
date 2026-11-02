@@ -329,7 +329,7 @@ def test_size_and_quality_hints_injected_when_size_enabled(no_global_prompt: Non
         size_enabled=True,
     )
 
-    assert plan.prompt == "画一只猫\n\n输出图片尺寸为 1792x1024。输出图片质量为 high。"
+    assert plan.prompt == "画一只猫\n\n输出图片尺寸为 1792x1024，横版。输出图片质量为 high。"
 
 
 def test_auto_quality_is_short_circuited(no_global_prompt: None) -> None:
@@ -343,7 +343,7 @@ def test_auto_quality_is_short_circuited(no_global_prompt: None) -> None:
     )
 
     assert "输出图片质量为" not in plan.prompt
-    assert plan.prompt == "画一只猫\n\n输出图片尺寸为 1792x1024。"
+    assert plan.prompt == "画一只猫\n\n输出图片尺寸为 1792x1024，横版。"
 
 
 def test_size_hints_not_injected_when_size_disabled(no_global_prompt: None) -> None:
@@ -397,7 +397,7 @@ def test_render_picture_prompt_prepends_system(global_prompt: str) -> None:
         size_enabled=True,
     )
 
-    assert render_picture_prompt(plan) == f"{global_prompt}\n\n画一只猫\n\n输出图片尺寸为 1024x1024。"
+    assert render_picture_prompt(plan) == f"{global_prompt}\n\n画一只猫\n\n输出图片尺寸为 1024x1024，方形。"
 
 
 def test_render_picture_prompt_without_system(no_global_prompt: None) -> None:
