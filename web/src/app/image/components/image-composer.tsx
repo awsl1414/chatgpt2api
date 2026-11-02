@@ -7,9 +7,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { imageModelLabel, isCodexImageModel } from "@/lib/api/models";
+import { imageModelLabel } from "@/lib/api/models";
 import type { ImageModel } from "@/lib/api/types";
-import { aspectOptions, codexExclusiveTiers } from "@/lib/image-composer-options";
+import {
+  NORMALIZED_OUTPUT_AREA_LABEL,
+  aspectOptionNote,
+  aspectOptions,
+  isAspectOptionDisabled,
+  modelUsesApiSize,
+} from "@/lib/image-composer-options";
 import { cn } from "@/lib/utils";
 import type { ImageComposerOptions } from "@/app/image/hooks/use-persisted-composer-options";
 
@@ -109,7 +115,13 @@ export function ImageComposer({
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
   const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
-  const isCodexModel = isCodexImageModel(imageModel);
+  const usesApiSize = modelUsesApiSize(imageModel);
+  /** 比例选择区的说明文案：只陈述实测行为，不写「支持/不支持」的含糊说法 */
+  const aspectHelpText = !usesApiSize
+    ? "该模型忽略尺寸参数，出图方向由提示词决定；比例选择已置灰"
+    : imageRatio === "auto"
+      ? `未指定比例，由模型决定；实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}`
+      : `按比例出图，实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}；2K/4K 只影响比例`;
 
   useEffect(() => {
     if (!isSizeMenuOpen) {
@@ -401,30 +413,47 @@ export function ImageComposer({
                             尺寸 <Info className="size-3.5 text-stone-400" />
                           </div>
                           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
-                            <div className="flex items-center rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
+                            <div
+                              className={cn(
+                                "flex items-center rounded-lg px-3 py-1.5 text-sm",
+                                usesApiSize ? "bg-stone-100 text-stone-700" : "bg-stone-50 text-stone-300",
+                              )}
+                            >
                               <span className="mr-2 text-stone-500">W</span>
                               <Input
                                 type="number"
                                 inputMode="numeric"
                                 min="1"
                                 value={imageWidth}
+                                disabled={!usesApiSize}
                                 onChange={(event) => onOptionsChange({ imageWidth: event.target.value })}
-                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
+                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium shadow-none focus-visible:ring-0"
                               />
                             </div>
                             <span className="text-stone-400">×</span>
-                            <div className="flex items-center rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
+                            <div
+                              className={cn(
+                                "flex items-center rounded-lg px-3 py-1.5 text-sm",
+                                usesApiSize ? "bg-stone-100 text-stone-700" : "bg-stone-50 text-stone-300",
+                              )}
+                            >
                               <span className="mr-2 text-stone-500">H</span>
                               <Input
                                 type="number"
                                 inputMode="numeric"
                                 min="1"
                                 value={imageHeight}
+                                disabled={!usesApiSize}
                                 onChange={(event) => onOptionsChange({ imageHeight: event.target.value })}
-                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium text-stone-800 shadow-none focus-visible:ring-0"
+                                className="h-7 border-0 bg-transparent px-0 text-sm font-medium shadow-none focus-visible:ring-0"
                               />
                             </div>
                           </div>
+                          {!usesApiSize ? (
+                            <p className="mt-2 text-xs text-stone-400">
+                              该模型忽略尺寸参数，宽高比请在提示词中写明（如「16:9 横版」）
+                            </p>
+                          ) : null}
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
@@ -434,12 +463,13 @@ export function ImageComposer({
                             {aspectOptions.map((option) => {
                               const active = option.ratio === imageRatio && option.tier === imageTier && option.width === imageWidth && option.height === imageHeight;
                               const Icon = aspectIcons[option.ratio];
-                              const disabled = !isCodexModel && codexExclusiveTiers.has(option.tier);
+                              const disabled = isAspectOptionDisabled(imageModel, option);
                               return (
                                 <button
                                   key={`${option.ratio}-${option.tier}-${option.label}`}
                                   type="button"
                                   disabled={disabled}
+                                  title={aspectOptionNote(imageModel, option) ?? undefined}
                                   className={cn(
                                     "flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
                                     active && "border-stone-950",
@@ -469,9 +499,7 @@ export function ImageComposer({
                               );
                             })}
                           </div>
-                          {!isCodexModel ? (
-                            <p className="mt-2 text-xs text-stone-400">2K/4K 尺寸仅 Codex 模型支持，已置灰不可选</p>
-                          ) : null}
+                          <p className="mt-2 text-xs text-stone-400">{aspectHelpText}</p>
                         </div>
                         <div className="border-t border-stone-100 pt-3">
                           <div className="mb-2 text-sm font-medium text-stone-900">生成数量</div>

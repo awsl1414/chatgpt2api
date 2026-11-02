@@ -163,7 +163,21 @@ export function usePersistedComposerOptions(): UsePersistedComposerOptionsResult
     }
   }, [parsedCount]);
 
-  // 切换模型时同步校验尺寸：非 Codex 模型不支持 2K/4K 档，自动回退到同比例 1K 档
+  // 持久化读回或异步加载模型后，收敛到该模型可用的档位：
+  // 用户上次可能停在 2K 档，或上次模型是 codex 而当前已是 picture_v2（反之亦然）。
+  useEffect(() => {
+    const fallback = aspectFallbackForModel(imageModel, imageRatio, imageTier);
+    if (!fallback) {
+      return;
+    }
+    setImageRatio(fallback.ratio);
+    setImageTier(fallback.tier);
+    setImageWidth(fallback.width);
+    setImageHeight(fallback.height);
+  }, [imageModel, imageRatio, imageTier]);
+
+  // 切换模型时同步校验尺寸：新模型不接受 size（codex 系列）时回退到 auto，
+  // 否则把 2K/4K 档回退到同比例 1K 档（见 lib/image-composer-options）
   const handleImageModelChange = useCallback(
     (model: ImageModel) => {
       setImageModel(model);
