@@ -7,9 +7,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { imageModelLabel, isCodexImageModel } from "@/lib/api/models";
+import { imageModelLabel } from "@/lib/api/models";
 import type { ImageModel } from "@/lib/api/types";
-import { aspectOptions, codexExclusiveTiers } from "@/lib/image-composer-options";
+import {
+  NORMALIZED_OUTPUT_AREA_LABEL,
+  aspectOptionNote,
+  aspectOptions,
+  modelUsesPromptSize,
+} from "@/lib/image-composer-options";
 import { cn } from "@/lib/utils";
 import type { ImageComposerOptions } from "@/app/image/hooks/use-persisted-composer-options";
 
@@ -109,7 +114,13 @@ export function ImageComposer({
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
   const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
-  const isCodexModel = isCodexImageModel(imageModel);
+  const usesPromptSize = modelUsesPromptSize(imageModel);
+  /** 比例选择区的说明文案：只陈述实测行为——比例兑现、像素不兑现 */
+  const aspectHelpText = usesPromptSize
+    ? imageRatio === "auto"
+      ? `未指定比例，由模型决定；实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}`
+      : `按所选比例出图，实际输出 ${NORMALIZED_OUTPUT_AREA_LABEL}（2K/4K 档只兑现比例，不兑现像素）`
+    : "该模型不支持按尺寸出图";
 
   useEffect(() => {
     if (!isSizeMenuOpen) {
@@ -425,6 +436,9 @@ export function ImageComposer({
                               />
                             </div>
                           </div>
+                          <p className="mt-2 text-xs text-stone-400">
+                            W/H 决定宽高比；所有模型实际输出 {NORMALIZED_OUTPUT_AREA_LABEL}
+                          </p>
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 flex items-center gap-1.5 text-sm font-medium text-stone-900">
@@ -434,28 +448,23 @@ export function ImageComposer({
                             {aspectOptions.map((option) => {
                               const active = option.ratio === imageRatio && option.tier === imageTier && option.width === imageWidth && option.height === imageHeight;
                               const Icon = aspectIcons[option.ratio];
-                              const disabled = !isCodexModel && codexExclusiveTiers.has(option.tier);
                               return (
                                 <button
                                   key={`${option.ratio}-${option.tier}-${option.label}`}
                                   type="button"
-                                  disabled={disabled}
+                                  title={aspectOptionNote(imageModel, option) ?? undefined}
                                   className={cn(
                                     "flex h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-2xl border border-stone-200 bg-white text-sm text-stone-800 transition hover:border-stone-300 hover:bg-stone-50",
                                     active && "border-stone-950",
-                                    disabled && "cursor-not-allowed border-stone-100 bg-stone-50 text-stone-300 hover:border-stone-100 hover:bg-stone-50",
                                   )}
-                                  onClick={() => {
-                                    if (disabled) {
-                                      return;
-                                    }
+                                  onClick={() =>
                                     onOptionsChange({
                                       imageRatio: option.ratio,
                                       imageTier: option.tier,
                                       imageWidth: option.width,
                                       imageHeight: option.height,
-                                    });
-                                  }}
+                                    })
+                                  }
                                 >
                                   {Icon ? (
                                     <>
@@ -469,9 +478,7 @@ export function ImageComposer({
                               );
                             })}
                           </div>
-                          {!isCodexModel ? (
-                            <p className="mt-2 text-xs text-stone-400">2K/4K 尺寸仅 Codex 模型支持，已置灰不可选</p>
-                          ) : null}
+                          <p className="mt-2 text-xs text-stone-400">{aspectHelpText}</p>
                         </div>
                         <div className="border-t border-stone-100 pt-3">
                           <div className="mb-2 text-sm font-medium text-stone-900">生成数量</div>

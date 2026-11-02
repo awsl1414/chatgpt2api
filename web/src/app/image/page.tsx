@@ -29,6 +29,7 @@ import {
   recoverConversationHistory,
 } from "@/lib/image-task-state";
 import { formatAvailableQuota, parseImageSize, pickFallbackConversationId } from "@/lib/image-utils";
+import { resolveRequestSize } from "@/lib/image-composer-options";
 import { useConfigStore } from "@/store/config";
 import { actionError } from "@/lib/action-result";
 import {
@@ -502,7 +503,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       mode: effectiveImageMode,
       referenceImages: reference.referenceImages,
       count: parsedCount,
-      size: `${imageWidth || 1024}x${imageHeight || 1024}`,
+      // 只在该模型确实接受 size 时才提交：codex 系列完全忽略该字段，
+      // 宽高比由后端写进提示词（见 lib/image-composer-options）。
+      size: resolveRequestSize(imageModel, imageWidth, imageHeight) ?? "",
       ratio: imageRatio,
       tier: imageTier,
       quality: imageQuality,

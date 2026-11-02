@@ -36,7 +36,7 @@
 | Render / Vercel 等部署表述 | ⚠️ | 当前主要以 Docker 部署为主，其他平台部署方式暂未重点说明。 |
 | 流式输出支持 | ✅  | 已实现：`/v1/chat/completions`、`/v1/responses`、`/v1/messages` 与图片接口均支持 `stream=true`。 |
 | 文本补全缓存与重复请求合并 | ✅  | `/v1/chat/completions` 与 `/v1/responses` 文本链路默认启用 60 秒短缓存、流式结果回放、in-flight 请求合并和相邻重复消息清理；可通过 `chat_completion_cache` 配置关闭或调整。 |
-| 图片尺寸参数 | ✅  | `/v1/images/generations` 请求支持 `size` 字段，按模型尺寸门控校验。 |
+| 图片尺寸参数 | ✅  | `/v1/images/generations`、`/v1/images/edits`、`/v1/responses` 图片工具接受 `size`。**`gpt-image-2` 的接口 size 生效**，宽高比精确跟随（提示词保持原措辞）。`codex-gpt-image-*` 系列不向上游发送 `tools[0].size`（该字段被上游忽略），改由提示词注入「尺寸 + 方向」（如「输出图片尺寸为 1792x1024，横版。」）——该链路唯一能决定宽高比的通道。任何模型都不兑现绝对像素，出图恒约 1.57M 像素。 |
 | 服务端图片 URL 缓存 | ✅  | 已实现。 |
 | `rt_token` 刷新 | ❌  | 待实现。 |
 | 代理配置功能 | ✅  | 通过 `proxy_runtime` 统一管理出站代理（网页端可配置），支持 WARP / FlareSolverr / Cloudflare 过墙方案；旧的全局 `proxy` 配置链已移除。 |

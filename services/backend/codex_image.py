@@ -132,7 +132,6 @@ def log_codex_response_failure(
             "model": payload.get("model"),
             "tool_model": tool.get("model"),
             "tool_action": tool.get("action"),
-            "size": tool.get("size"),
             "quality": tool.get("quality"),
             "image_input_count": max(len((payload.get("input") or [{}])[0].get("content") or []) - 1, 0),
             "prompt_preview": codex_body_preview(
@@ -208,7 +207,6 @@ def iter_codex_image_response_events(
         api: BackendClient,
         prompt: str,
         images: list[str] | None = None,
-        size: str | None = None,
         quality: str = "auto",
         image_model: str = "gpt-image-2",
         instructions: str = CODEX_RESPONSES_INSTRUCTIONS,
@@ -218,6 +216,9 @@ def iter_codex_image_response_events(
     `instructions` 默认为固定英文常量；协议层通过
     `prompt_plan.render_codex_instructions(plan)` 传入「global system + 常量」，
     使 codex 链路也能读到管理端配置的 global_system_prompt。
+
+    本函数**不接受 size**：codex 工具层对 `size` 完全无响应（实测 20+ 样本），
+    宽高比只能由提示词表达，因此该参数在此不存在，避免调用方误以为可传。
     """
     if not api.access_token:
         raise RuntimeError("access_token is required for codex image endpoints")
@@ -228,11 +229,12 @@ def iter_codex_image_response_events(
         "instructions": instructions or CODEX_RESPONSES_INSTRUCTIONS,
         "store": False,
         "input": codex_image_input(prompt, images or []),
+        # codex 工具层完全忽略 `size`（实测 20+ 样本，见工作区 docs/size-verification.md），
+        # 因此不发送该字段：宽高比只能通过提示词表达，见 utils/image_size.py。
         "tools": [{
             "type": "image_generation",
             "model": str(image_model or "gpt-image-2"),
             "action": "edit" if images else "generate",
-            "size": str(size or "1024x1024"),
             "quality": str(quality or "auto"),
             "output_format": "png",
         }],
@@ -271,7 +273,6 @@ def iter_codex_image_response_events(
             "model": payload.get("model"),
             "tool_model": tool.get("model"),
             "tool_action": tool.get("action"),
-            "size": tool.get("size"),
             "quality": tool.get("quality"),
             "output_format": tool.get("output_format"),
             "stream": payload.get("stream"),

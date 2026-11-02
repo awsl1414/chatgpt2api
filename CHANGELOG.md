@@ -2,6 +2,11 @@
 
 ## Unreleased
 
++ [修复] 生图尺寸传递与实测能力对齐（依据工作区 `docs/size-verification.md` 103 条真实出图样本）：新增后端单一事实源 `utils/image_size.py`（`IMAGE_SIZE_CAPABILITIES`），按「接口 `size` 是否生效」与「提示词尺寸是否生效」两个维度描述模型能力。实测：接口 `size` **只在 picture_v2 生效**；`codex-gpt-image-*` 全系列（含 plus-/team-/pro- 前缀）的上游 `tools[0].size` 被完全忽略，现已**不再发送该字段**。提示词注入据此分流：**codex 系列（接口 size 无效）注入「尺寸 + 方向」**（如「输出图片尺寸为 1792x1024，横版。」），这是该链路唯一能决定宽高比的通道；**picture_v2（接口 size 有效）保持原措辞、行为零变化**（对外 `revised_prompt` 文本不变）。
++ [变更] 图片页尺寸选项**全部保持可用**（含 codex 下的比例档与 2K/4K 档）：比例是真能兑现的能力，2K/4K 的差异只是像素不兑现。2K/4K 档在 UI 上标注「比例有效，实际输出约 1.57M 像素，不兑现 2K/4K 像素」，W/H 输入框保持可用（其值转为提示词里的比例意图）。删除错误前提 `codexExclusiveTiers`（「2K/4K 仅 Codex 支持」已被实测推翻），不做兼容保留。
++ [变更] 前端对所有模型都提交 `size`（`resolveRequestSize` 不再按模型返回 undefined）：后端需要该值来构造提示词比例语句，不提交等于放弃比例控制。切换模型不再改写用户已选的档位（没有任何档位因模型而不可用）。
++ [文档] `docs/openapi.yaml` 的 `size` 字段说明、`README.md` 图片接口参数表与功能列表同步：codex 系列注入「尺寸 + 方向」且不向上游发送 `tools[0].size`；picture_v2 保持原措辞；绝对像素任何模型都不兑现（恒约 1.57M）。
+
 + [重构] 提示词组装收敛到单一事实源 `services/protocol/prompt_plan.py`（`PromptPlan`）：文本（`/v1/chat/completions`、`/v1/responses`、`/v1/messages`）、picture_v2 与 codex 三条链路统一在请求路径内构造一次提示词，各链路只做形态转换。由此修复三个缺陷：①配置 `global_system_prompt` 时文本链路每次请求注入 **2 次**（含调用方自带 system 的请求，不会再逐轮累积）；②`/v1/responses` 用图片模型但无 `image_generation` 工具时上游收到空 `prompt`（纯图片请求现回退到「按参考图生成图片。」，并从 messages 提取输入图片，图生图不再丢图）；③`codex-*` 模型完全不读 `global_system_prompt`，现拼进 responses 的 `instructions` 字段。
 + [变更] 承接上条，以下对外可观测行为随之调整：`global_system_prompt` 与「不支持工具」兜底文案合并为**一条** system 消息（旧实现为多条独立 system，`prompt_tokens` 相应减少）；兜底文案位置由首位改为合并 system 的末尾；`quality` 为 `auto`（默认值）时不再向上游注入「输出图片质量为 auto。」这类无信息量句子，因此未显式传 `quality` 的生图请求提示词文本与旧版不同。
 + [修复] `/v1/messages` 传图片模型名时不再静默返回空文本：该端点只实现文本对话，入口直接返回 400（Anthropic 错误体），消息指明改用 `/v1/images/generations` 或 `/v1/images/edits`。
@@ -31,7 +36,7 @@
 + [新增] 新增 Codex 通道图像模型 `codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`（含 plus-/team-/pro- 前缀变体）：工具层模型 ID 按公开名映射传给上游 `/backend-api/codex/responses`，`/v1/models` 按账号类型广播；图片页模型选择器展示友好名称。
 + [修复] Codex 生图顶层模型 `gpt-5.5` 已被上游拒绝（400 `model_not_found`），改为实测可用的 `gpt-6-luna`。
 + [修复] 尺寸/质量提示仅注入契约里明确有 `size` 参数的接口（`/v1/images/generations`、`/v1/images/edits`、`/v1/responses` 图片工具）；`/v1/chat/completions` 等没有 `size` 参数的接口不再拼接该上下文。
-+ [优化] 图片页 2K/4K 尺寸档位仅 Codex 模型可选：置灰选项增加提示说明，切换到非 Codex 模型时自动回退到同比例 1K 档。
++ [优化] 图片页尺寸档位增加提示说明，切换模型时自动收敛档位（初始假设「2K/4K 仅 Codex 支持」，已被本节上方的实测结论推翻并重做：现所有比例档位均可用，2K/4K 仅标注像素不兑现）。
 
 ## 1.8.0 - 2026-07-28
 

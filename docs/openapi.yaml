@@ -2214,7 +2214,16 @@ components:
         prompt: { type: string, minLength: 1 }
         model: { type: string, default: gpt-image-2 }
         n: { type: integer, minimum: 1, maximum: 4, default: 1 }
-        size: { type: [string, "null"] }
+        size:
+          type: [string, "null"]
+          description: |
+            `宽x高`（如 `1024x1536`）。**`gpt-image-2`（picture_v2）的接口 size 生效**，
+            服务端转成提示词里的尺寸文本，宽高比精确跟随。
+            `codex-gpt-image-*` 系列（含 plus-/team-/pro- 前缀）的上游 `tools[0].size`
+            被完全忽略，服务端**不再发送该字段**，改为在提示词里注入「尺寸 + 方向」
+            （如「输出图片尺寸为 1792x1024，横版。」）——这是该链路唯一能决定宽高比的通道。
+            任何模型都不兑现绝对像素，出图面积恒定归一化到约 1,572,864 px
+            （见 docs/feature-status.en.md）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2232,7 +2241,12 @@ components:
         n:
           type: string
           description: 字符串形式的整数，取值 1-4（服务端按 int 转换后校验）。
-        size: { type: string }
+        size:
+          type: string
+          description: |
+            语义同 `ImageGenerationRequest.size`：picture_v2 的接口 size 生效；
+            codex 系列不发送上游 `tools[0].size`，改由提示词注入「尺寸 + 方向」。
+            绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream:
@@ -2252,7 +2266,12 @@ components:
         prompt: { type: string }
         model: { type: string, default: gpt-image-2 }
         n: { type: integer, minimum: 1, maximum: 4 }
-        size: { type: [string, "null"] }
+        size:
+          type: [string, "null"]
+          description: |
+            语义同 `ImageGenerationRequest.size`：picture_v2 的接口 size 生效；
+            codex 系列不发送上游 `tools[0].size`，改由提示词注入「尺寸 + 方向」。
+            绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
         stream: { type: [boolean, "null"] }
@@ -2341,7 +2360,12 @@ components:
         client_task_id: { type: string, minLength: 1 }
         prompt: { type: string, minLength: 1 }
         model: { type: string, default: gpt-image-2 }
-        size: { type: [string, "null"] }
+        size:
+          type: [string, "null"]
+          description: |
+            语义同 `ImageGenerationRequest.size`：picture_v2 的接口 size 生效；
+            codex 系列不发送上游 `tools[0].size`，改由提示词注入「尺寸 + 方向」。
+            绝对像素不兑现（恒约 1.57M 像素）。
         quality: { type: string, default: auto }
 
     ImageTask:

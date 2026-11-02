@@ -152,6 +152,7 @@ environment:
 
 - 内置在线画图工作台，支持生成、图片编辑与多图组图编辑
 - 图片页模型选择器展示 `GET /v1/models` 中 id 含 image 的项：`gpt-image-2`、`codex-gpt-image-*` 及其 plus-/team-/pro- 前缀变体（文本模型不会出现在图片页）
+- 尺寸选项全部可用：比例是实测中所有模型都稳定兑现的能力（服务端把请求尺寸写成提示词里的「尺寸 + 方向」语句）；2K/4K 档位在 UI 上标注「比例有效，实际输出约 1.57M 像素，不兑现 2K/4K 像素」，不置灰
 - 编辑模式支持参考图上传
 - 前端支持多图生成交互
 - 本地保存图片会话历史，支持回看、删除和清空
@@ -253,6 +254,7 @@ curl http://localhost:8000/v1/images/generations \
 | `prompt`          | 图片生成提示词                                            |
 | `n`               | 生成数量，当前后端限制为 `1-4`                                 |
 | `response_format` | 当前请求模型中包含该字段，默认值为 `b64_json`                       |
+| `size`            | `宽x高`。`gpt-image-2` 的接口 size 生效，宽高比精确跟随；`codex-gpt-image-*` 忽略该字段（不向上游发送 `tools[0].size`），改由提示词注入「尺寸 + 方向」。绝对像素不兑现（恒约 1.57M 像素） |
 
 <br>
 </details>
@@ -300,6 +302,7 @@ curl http://localhost:8000/v1/images/edits \
 | `image`     | 需要编辑的图片文件，使用 multipart/form-data 上传           |
 | `images`    | JSON 图片引用数组，支持 `{"image_url": "https://..."}` |
 | `image_url` | 表单模式下也可直接传图片链接，支持重复字段传多张图                     |
+| `size`      | `宽x高`，语义同 `/v1/images/generations`：picture_v2 生效，codex 走提示词；绝对像素不兑现 |
 
 <br>
 </details>

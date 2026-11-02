@@ -827,10 +827,11 @@ def stream_codex_image_outputs(
     """
     plan = _request_plan(request)
     upstream_prompt = render_codex_input_prompt(plan)
+    # codex 工具层忽略 size，宽高比已由 plan.prompt 里的尺寸语句承载（见 utils/image_size.py），
+    # 这里不再传 size 参数。
     images = _codex_response_images(list(backend.iter_codex_image_response_events(
         prompt=upstream_prompt,
         images=plan.images,
-        size=request.size,
         quality=request.quality,
         image_model=codex_image_tool_model(request.model),
         instructions=render_codex_instructions(plan),

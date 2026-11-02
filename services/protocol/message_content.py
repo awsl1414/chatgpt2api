@@ -134,15 +134,20 @@ def normalize_message_list(messages: object) -> list[dict[str, Any]]:
     return normalized
 
 
-def image_hint_text(prompt: str, size: str | None, quality: str) -> str:
+def image_hint_text(prompt: str, size: str | None, quality: str, orientation: str = "") -> str:
     """把 size / quality 以中文提示拼进生图提示词。
 
     `quality == "auto"` 时不注入质量句——旧实现是 `if quality:`，会把默认值
     「输出图片质量为 auto。」也发给上游；这是有意的行为变更（见 CHANGELOG）。
+
+    `orientation` 非空时（`横版` / `竖版` / `方形`）追加在尺寸之后：提示词是所有
+    已测模型唯一被证实的比例通道，实测「像素 + 方向」的中文措辞（`图片尺寸：
+    1024x1792，竖版。`）能稳定决定宽高比（见工作区 `docs/size-verification.md` §4.3）。
     """
     hints: list[str] = []
     if size:
-        hints.append(f"输出图片尺寸为 {size}。")
+        suffix = f"，{orientation}" if orientation else ""
+        hints.append(f"输出图片尺寸为 {size}{suffix}。")
     if quality and quality != "auto":
         hints.append(f"输出图片质量为 {quality}。")
     return f"{prompt.strip()}\n\n{''.join(hints)}" if hints else prompt
