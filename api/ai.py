@@ -37,7 +37,6 @@ class ImageGenerationRequest(BaseModel):
     size: str | None = None
     quality: str = "auto"
     response_format: str = "b64_json"
-    history_disabled: bool = True
     stream: bool | None = None
 
 class ChatCompletionRequest(BaseModel):

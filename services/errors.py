@@ -98,13 +98,23 @@ class ReviewUnavailableError(ContentFilterError):
 
 
 class InvalidAccessTokenError(DomainError):
-    """上游 access token 已失效，需刷新或重新登录账号。"""
+    """上游 access token 已失效，需刷新或重新登录账号。
+
+    `status_code` 只在异常**直接穿透**到 `api/errors.py` 时生效；
+    图片链路会先把它换算成换号/刷新（见 `_decide_transport_retry`），
+    最终对外失败统一是 `ImageGenerationError`（502 / `upstream_error`）。
+    """
 
     status_code = 502
 
 
 class ImageTaskError(DomainError):
-    """图片生成异常基类，携带上游会话 ID 供调用方清理对话。"""
+    """图片生成异常基类，携带上游会话 ID 供调用方清理对话。
+
+    `status_code` 同样只对直接穿透的路径生效；`_generate_single_image`
+    按异常类型分类处理（轮询超时换号重试、内容政策立即终止），
+    未知异常统一包装为 `ImageGenerationError`。
+    """
 
     status_code = 502
 

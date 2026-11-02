@@ -26,7 +26,8 @@ git --version
 | `.env` | Docker compose 环境变量 |
 | `data/` | 账号、日志、图片、任务记录等运行数据 |
 
-升级和迁移时重点保留以上内容。
+升级和迁移时重点保留以上内容。首次部署必须先在 `config.json` 写入 `auth-key`
+（或设置环境变量 `CHATGPT2API_AUTH_KEY`），否则启动直接报错。
 
 ## 方式一：普通 Docker 部署
 
@@ -150,7 +151,8 @@ bun install
 bun run dev
 ```
 
-源码方式运行时，后端默认读取项目根目录的 `config.json` 和 `data/`。
+源码方式运行时，后端默认读取项目根目录的 `config.json` 和 `data/`，并在
+`127.0.0.1:8000` 监听（`main.py` 未传 port，走 uvicorn 默认值；Docker 里才映射到 80/3000）。
 
 ## 存储后端
 

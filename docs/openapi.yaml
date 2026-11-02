@@ -90,6 +90,8 @@ paths:
           description: |
             同步返回 Chat Completion；`stream=true` 时返回 SSE 流
             （`data: {...}` 行 + 终止行 `data: [DONE]`，OpenAI 格式）。
+            图片模型分支的 `message.content` 是 Markdown 图片
+            （`![image_1](data:image/png;base64,...)`），不是纯文本。
           content:
             application/json:
               schema: { $ref: "#/components/schemas/ChatCompletionResponse" }
@@ -131,11 +133,20 @@ paths:
       tags: [OpenAI 兼容 API]
       summary: 文生图
       description: |
-        同步返回或 `stream=true` SSE（分块传输图片数据）。
+        同步返回或 `stream=true` SSE。
         `response_format=b64_json`（默认）时同时落盘并返回本地 `url`；
         `url` 时仅返回本地 `url`。均附带 `revised_prompt` 与 `usage`。
+        `revised_prompt` 是该链路实际发往上游的文本（picture_v2 含 global system
+        与尺寸/质量提示；codex 为上游 `input` 原文，global 走 `instructions`）。
+
+        **SSE chunk 不是 OpenAI chunk 结构**，而是自定义对象：事件体为
+        `data: {"object": "image.generation.chunk"|"image.generation.message"|"image.generation.result", ...}`。
+        共同字段：`object`、`created`、`model`、`index`、`total`、`data`；
+        `progress` 阶段额外带 `progress_text` / `upstream_event_type`，
+        `message` 阶段带 `message`，`result` 阶段带 `data[]`（元素同同步响应）。
+        详见 `ImageGenerationChunk`。
         （static：api/ai.py、services/protocol/openai_v1_image_generations.py、
-        services/protocol/image_stream.py:105-134）
+        services/protocol/image_stream.py:172-202）
       requestBody:
         required: true
         content:
@@ -148,7 +159,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ImageGenerationResponse" }
             text/event-stream:
-              schema: { type: string }
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ImageGenerationChunk"
+                description: 每个 `data:` 行一个 image.generation.* 对象
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429":
@@ -165,31 +179,27 @@ paths:
       description: |
         同时支持 multipart/form-data 上传与 application/json（图片用 URL / data URL /
         base64 引用）。`file_id` 引用明确不支持（400）。图片引用单张上限 50MB。
-        （static：api/image_inputs.py:27-29,174-202,295-322）
+        `config.allow_remote_image_fetch=false` 时，除 data URL / base64 / 上传文件外的
+        远程 http(s) 图片引用一律返回 400（SSRF 收敛），对话类图片输入同样受该开关约束。
+        响应与 SSE chunk 形态同 `POST /v1/images/generations`（`image.generation.*` 对象）。
+        （static：api/image_inputs.py、services/protocol/openai_v1_image_edit.py）
       requestBody:
         required: true
         content:
           multipart/form-data:
             schema:
-              type: object
-              required: [prompt]
-              properties:
-                prompt: { type: string }
-                model: { type: string, default: gpt-image-2 }
-                n: { type: string, description: "生成数量，字符串形式的整数，1-4" }
-                size: { type: string }
-                quality: { type: string, default: auto }
-                response_format: { type: string, default: b64_json, enum: [b64_json, url] }
-                stream: { type: string, description: '"true"/"1"/"yes"/"y"/"on" 为真，"false"/"0"/"no"/"n"/"off" 为假' }
-                client_task_id: { type: string }
-                image:
-                  type: array
-                  items: { type: string, format: binary }
-                  description: 输入图片，字段名兼容 image / image[] / images / images[] / image_url / image_url[]
-                mask:
-                  type: array
-                  items: { type: string, format: binary }
-                  description: 蒙版图，字段名兼容 mask / mask[]
+              allOf:
+                - $ref: "#/components/schemas/ImageEditFormRequest"
+                - type: object
+                  properties:
+                    image:
+                      type: array
+                      items: { type: string, format: binary }
+                      description: 输入图片，字段名兼容 image / image[] / images / images[] / image_url / image_url[]
+                    mask:
+                      type: array
+                      items: { type: string, format: binary }
+                      description: 蒙版图，字段名兼容 mask / mask[]
           application/json:
             schema: { $ref: "#/components/schemas/ImageEditJsonRequest" }
       responses:
@@ -199,7 +209,10 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/ImageGenerationResponse" }
             text/event-stream:
-              schema: { type: string }
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ImageGenerationChunk"
+                description: 每个 `data:` 行一个 image.generation.* 对象
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "429":
@@ -301,7 +314,12 @@ paths:
         Anthropic Messages 协议面。认证可使用 `Authorization: Bearer` 或
         `x-api-key` header（服务端内部拼成 Bearer 处理）。`stream=true` 时
         SSE 为 Anthropic 事件格式（message_start / content_block_delta 等）。
-        （static：api/ai.py:146-159、services/log_service.py:246-300）
+
+        **仅支持文本对话**：`model` 为受支持的图片模型（`gpt-image-2`、
+        `codex-gpt-image-*` 及其 plus-/team-/pro- 前缀变体）时直接返回 400
+        （Anthropic 错误体，`error.type=invalid_request_error`），并在消息里
+        指明改用 `/v1/images/generations`、`/v1/images/edits`。
+        （static：api/ai.py、services/protocol/anthropic_v1_messages.py）
       requestBody:
         required: true
         content:
@@ -502,6 +520,7 @@ paths:
           in: query
           required: false
           schema: { type: string, default: html, enum: [html, json] }
+          description: 只有 `json` 走 JSON 分支；其余任意值（含未知值）一律返回 HTML，不报 422。
       responses:
         "200":
           description: html 返回自刷新监控页（30s）；json 返回统计结构
@@ -667,11 +686,11 @@ paths:
             application/json:
               schema:
                 type: object
-                required: [refreshed, errors]
+                required: [added, skipped, refreshed, errors, items]
                 properties:
-                  added: { type: [integer, "null"], description: 推断字段 }
-                  skipped: { type: [integer, "null"], description: 推断字段 }
-                  refreshed: { type: [integer, "null"], description: 推断字段 }
+                  added: { type: [integer, "null"], description: 新增账号数 }
+                  skipped: { type: [integer, "null"], description: 已存在而跳过的账号数 }
+                  refreshed: { type: [integer, "null"], description: 刷新成功数 }
                   errors:
                     type: array
                     items: {}
@@ -906,9 +925,9 @@ paths:
                 type: object
                 additionalProperties: true
                 properties:
-                  added: { type: [integer, "null"], description: 推断字段 }
-                  skipped: { type: [integer, "null"], description: 推断字段 }
-                  refreshed: { type: [integer, "null"], description: 推断字段 }
+                  added: { type: [integer, "null"], description: 新增账号数 }
+                  skipped: { type: [integer, "null"], description: 已存在而跳过的账号数 }
+                  refreshed: { type: [integer, "null"], description: 刷新成功数 }
                   errors: { type: array, items: {} }
                   items:
                     type: array
@@ -1076,7 +1095,7 @@ paths:
                 names:
                   type: array
                   items: { type: string }
-                  description: 要导入的远端文件名；为空语义未核实
+                  description: 要导入的远端文件名；空列表返回 400（selected files is required）
       responses:
         "200":
           description: 导入任务
@@ -1561,19 +1580,30 @@ paths:
       responses:
         "200":
           description: |
-            图片列表。结构为 `{"items": [...]}`（capture：2026-11-01 实测），
-            每条含 rel / path / name / date / size / created_at / storage / local /
-            webdav / remote_url / width / height / url / thumbnail_url / tags，
-            其中 url、thumbnail_url 由 config base_url 或请求 Host 拼接。
+            图片列表。结构为 `{"items": [...], "groups": [{"date": ..., "items": [...]}]}`
+            （items 按 date 分组的同一份数据）。每条含 rel / path / name / date / size /
+            created_at / storage / local / webdav / remote_url / width / height / url /
+            thumbnail_url / tags，其中 url、thumbnail_url 由 config base_url 或请求 Host 拼接。
           content:
             application/json:
               schema:
                 type: object
-                required: [items]
+                required: [items, groups]
                 properties:
                   items:
                     type: array
                     items: { type: object, additionalProperties: true }
+                  groups:
+                    type: array
+                    description: 按 date 分组的图片列表
+                    items:
+                      type: object
+                      required: [date, items]
+                      properties:
+                        date: { type: string }
+                        items:
+                          type: array
+                          items: { type: object, additionalProperties: true }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
 
@@ -2177,6 +2207,9 @@ components:
     ImageGenerationRequest:
       type: object
       required: [prompt]
+      description: |
+        `/v1/images/generations` 的 JSON 请求体。`stream` 为 JSON 布尔值；
+        multipart 载体（`/v1/images/edits`）使用字符串枚举，见 `ImageEditFormRequest`。
       properties:
         prompt: { type: string, minLength: 1 }
         model: { type: string, default: gpt-image-2 }
@@ -2184,8 +2217,29 @@ components:
         size: { type: [string, "null"] }
         quality: { type: string, default: auto }
         response_format: { type: string, default: b64_json, enum: [b64_json, url] }
-        history_disabled: { type: boolean, default: true }
         stream: { type: [boolean, "null"] }
+
+    ImageEditFormRequest:
+      type: object
+      description: |
+        `/v1/images/edits` 的 multipart/form-data 请求体。所有字段都以字符串传输：
+        `n` 需可转为 1-4 的整数；`stream` 接受 "true"/"1"/"yes"/"y"/"on"（真）与
+        "false"/"0"/"no"/"n"/"off"（假）。
+      required: [prompt]
+      properties:
+        prompt: { type: string }
+        model: { type: string, default: gpt-image-2 }
+        n:
+          type: string
+          description: 字符串形式的整数，取值 1-4（服务端按 int 转换后校验）。
+        size: { type: string }
+        quality: { type: string, default: auto }
+        response_format: { type: string, default: b64_json, enum: [b64_json, url] }
+        stream:
+          type: string
+          enum: ["true", "1", "yes", "y", "on", "false", "0", "no", "n", "off"]
+          description: 字符串布尔值，语义见上方说明。
+        client_task_id: { type: string }
 
     ImageEditJsonRequest:
       type: object
@@ -2229,6 +2283,35 @@ components:
             base64: { type: string }
             filename: { type: string }
             mime_type: { type: string }
+
+    ImageGenerationChunk:
+      type: object
+      description: |
+        `stream=true` 时 SSE 的 `data:` 行对象（**不是** OpenAI chat chunk）。
+        `object` 区分三类事件；`data` 字段在 progress 阶段恒为空数组。
+      required: [object, created, model, index, total, data]
+      properties:
+        object:
+          type: string
+          enum: [image.generation.chunk, image.generation.message, image.generation.result]
+          description: progress / message / result 三类事件
+        created: { type: integer }
+        model: { type: string }
+        index: { type: integer, description: 当前第几张 }
+        total: { type: integer, description: 本次请求总张数 }
+        data:
+          type: array
+          description: result 阶段为图片结果数组（元素同 ImageGenerationResponse.data）
+          items: { type: object, additionalProperties: true }
+        progress_text: { type: string, description: progress 阶段的上游进度文案 }
+        upstream_event_type:
+          type: string
+          description: progress 阶段对应的上游事件类型（如 conversation.delta）
+        message: { type: string, description: message 阶段的文本消息 }
+        _account_email:
+          type: string
+          description: 本次使用的账号邮箱；服务端在 HTTP 响应中剔除该字段，仅日志使用
+        _conversation_id: { type: string }
 
     ImageGenerationResponse:
       type: object

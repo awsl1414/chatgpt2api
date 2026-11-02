@@ -108,7 +108,7 @@ export function ConfigCard() {
               <span className="text-sm text-stone-700">允许拉取远程图片</span>
             </div>
             <p className="text-xs text-stone-500">
-              打开后请求中的远程 image_url（http/https）由服务端拉取，内网图源依赖此能力，默认开启；服务端会向请求指定的任意 URL 发起请求，存在被用于探测内网的风险，面向公网开放时建议关闭，仅接受 base64/data 形式的图片输入。
+              打开后请求中的远程 image_url（http/https）由服务端拉取，内网图源依赖此能力，默认开启；服务端会向请求指定的任意 URL 发起请求，存在被用于探测内网的风险，面向公网开放时建议关闭，关闭后对话类图片输入与 /v1/images/edits 的远程引用都会被拒绝，仅接受 base64 / data URL / 上传文件。
             </p>
           </div>
           <div className="space-y-2">
@@ -152,7 +152,7 @@ export function ConfigCard() {
                 <SelectItem value="max">Max</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-stone-500">模型名称以 -standard、-extended 或 -max 结尾时，模型后缀优先。</p>
+            <p className="text-xs text-stone-500">模型名称以 -standard、-extended 或 -max 结尾时，图片请求优先使用该后缀（文本请求按上方值直接透传）。</p>
           </div>
           <div className="space-y-2">
             <label className="text-sm text-stone-700">图片自动清理</label>
@@ -252,9 +252,9 @@ export function ConfigCard() {
                   checked={Boolean(config?.auto_relogin_after_refresh)}
                   onCheckedChange={(checked) => setAutoReloginAfterRefresh(Boolean(checked))}
                 />
-                刷新后自动尝试移除异常状态
+                刷新后自动密码重登异常账号
               </label>
-              <p className="text-xs text-stone-500">开启后刷新时自动尝试密码登录恢复账号。</p>
+              <p className="text-xs text-stone-500">开启后刷新时，对状态为「异常」且已配置邮箱与密码的账号自动尝试密码重登。</p>
             </div>
             <div className="flex-1" aria-hidden="true" />
           </div>

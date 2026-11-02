@@ -4,9 +4,10 @@
 用 mock 驱动端点 `handle()`，断言最终传给上游的 `prompt` / `messages` /
 `instructions`，固化三个高危缺陷已修复：
 
-1. **空 prompt**：`/v1/messages` 传图片模型名 + 只有 messages → 上游 prompt 非空；
-2. **重复注入**：文本链路配置 global system 后，上游 messages 中只出现 1 次；
-3. **codex 静默失效**：`codex-*` 模型把 global system 拼进 `instructions`。
+1. **重复注入**：文本链路配置 global system 后，上游 messages 中只出现 1 次；
+2. **codex 静默失效**：`codex-*` 模型把 global system 拼进 `instructions`。
+
+`/v1/messages` 对图片模型的 400 契约见 `test_v1_messages_image_contract.py`。
 
 手法沿用 `test_image_size_gating.py` 的 `_captured_prompt` 模式：替换 backend
 并捕获 `stream_conversation` 的 kwargs。
@@ -27,10 +28,9 @@ from services.protocol import anthropic_v1_messages, openai_v1_chat_complete, op
 from services.protocol import image_stream as image_stream_module
 from services.protocol.image_stream import stream_codex_image_outputs
 from services.protocol.message_utils import ConversationRequest
-from services.protocol.prompt_plan import IMAGE_ONLY_PROMPT, build_prompt_plan, render_picture_prompt
+from services.protocol.prompt_plan import build_prompt_plan, render_picture_prompt
 
 GLOBAL_PROMPT = "GLOBAL"
-PNG_B64 = "aGVsbG8="
 
 
 @pytest.fixture
@@ -82,75 +82,11 @@ def _patch_text_backend(monkeypatch: pytest.MonkeyPatch, module: Any) -> _Captur
 
 
 # --------------------------------------------------------------------------- #
-# 缺陷 1：/v1/messages 传图片模型名 → 上游 prompt 不能为空
+# 文本链路不回显图片 hint（图片模型请求已由 /v1/messages 入口 400 拒绝）
 # --------------------------------------------------------------------------- #
 
-def test_anthropic_image_model_derives_non_empty_prompt(no_global_prompt: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """图片模型 + 只有 messages → picture_v2 收到的是派生出的非空 prompt。"""
-    backend = _patch_text_backend(monkeypatch, openai_v1_chat_complete)
-
-    anthropic_v1_messages.handle({
-        "model": "gpt-image-2",
-        "messages": [{"role": "user", "content": "你好"}],
-    })
-
-    assert backend.captured["prompt"] == "你好"
-    assert backend.captured["system_hints"] == ["picture_v2"]
-
-
-def test_anthropic_image_only_message_gets_fallback_prompt(no_global_prompt: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """只发图、不给文字（图生图）→ prompt 回退到非空文案，且图片不丢。"""
-    backend = _patch_text_backend(monkeypatch, openai_v1_chat_complete)
-
-    anthropic_v1_messages.handle({
-        "model": "gpt-image-2",
-        "messages": [{
-            "role": "user",
-            "content": [{"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": PNG_B64}}],
-        }],
-    })
-
-    assert backend.captured["prompt"] == IMAGE_ONLY_PROMPT
-    assert backend.captured["images"] == [PNG_B64]
-
-
-def test_anthropic_image_model_keeps_images_from_messages(no_global_prompt: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """带文字的图生图：prompt 取文字，图片同时传给上游。"""
-    backend = _patch_text_backend(monkeypatch, openai_v1_chat_complete)
-
-    anthropic_v1_messages.handle({
-        "model": "gpt-image-2",
-        "messages": [{
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "把背景换成海边"},
-                {"type": "image", "source": {"type": "base64", "media_type": "image/png", "data": PNG_B64}},
-            ],
-        }],
-    })
-
-    assert backend.captured["prompt"] == "把背景换成海边"
-    assert backend.captured["images"] == [PNG_B64]
-
-
-def test_anthropic_image_model_joins_multiple_user_turns(no_global_prompt: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """多轮 user 文本按换行压平，语义与 `extract_chat_prompt` 一致。"""
-    backend = _patch_text_backend(monkeypatch, openai_v1_chat_complete)
-
-    anthropic_v1_messages.handle({
-        "model": "gpt-image-2",
-        "messages": [
-            {"role": "user", "content": "画一只猫"},
-            {"role": "assistant", "content": "好的"},
-            {"role": "user", "content": "再加一顶帽子"},
-        ],
-    })
-
-    assert backend.captured["prompt"] == "画一只猫\n再加一顶帽子"
-
-
 def test_anthropic_text_model_keeps_user_prompt(no_global_prompt: None, monkeypatch: pytest.MonkeyPatch) -> None:
-    """文本模型不注入 picture_v2，prompt 只用于图片链路（此处为空）。"""
+    """文本模型不注入 picture_v2。"""
     backend = _patch_text_backend(monkeypatch, openai_v1_chat_complete)
 
     anthropic_v1_messages.handle({
@@ -336,10 +272,13 @@ def test_generations_revised_prompt_contains_hints_and_global(
 
     request = captured["request"]
     assert request.prompt == "画一只猫"
-    # final_prompt 是实际发往上游的单段文本：global + 尺寸/质量提示
-    assert request.final_prompt == render_picture_prompt(request.plan)
-    assert "输出图片尺寸为 1792x1024。" in request.final_prompt
-    assert request.final_prompt.startswith(f"{global_prompt}\n\n")
+    # 实际上游文本由链路渲染器决定：picture_v2 用 render_picture_prompt(plan)
+    upstream = render_picture_prompt(request.plan)
+    assert upstream.startswith(f"{global_prompt}\n\n")
+    assert "输出图片尺寸为 1792x1024。" in upstream
+    assert "输出图片质量为 high。" in upstream
+    # 端点不再单独保存一份「实际上游文本」，事实源唯一
+    assert not hasattr(request, "final_prompt")
 
 
 def test_chat_global_prompt_read_at_request_time(monkeypatch: pytest.MonkeyPatch) -> None:

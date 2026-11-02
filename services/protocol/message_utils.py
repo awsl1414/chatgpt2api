@@ -4,18 +4,22 @@
 以及图片/文本生成共用的请求模型 `ConversationRequest`。
 提示词组装的策略决策（system 合并、尺寸/质量文本注入）统一在
 `services.protocol.prompt_plan` 中完成，本模块不再提供。
-本模块只依赖 `services.message_image` / `utils`，不得反向依赖 protocol 包内其他模块。
+本模块只依赖 `services.message_image` / `services.protocol.message_content` / `utils`，
+不得反向依赖 protocol 包内其他模块（`prompt_plan` 仅在 `TYPE_CHECKING` 下引入类型）。
 """
 from __future__ import annotations
 
 import base64
 from dataclasses import dataclass
-from typing import Any, Iterable
+from typing import TYPE_CHECKING, Any, Iterable
 
 import tiktoken
 
+from services.protocol.message_content import message_text
 from utils.image_tokens import count_image_content_tokens
-from utils.message_content import message_text
+
+if TYPE_CHECKING:
+    from services.protocol.prompt_plan import PromptPlan
 
 
 def encode_images(images: Iterable[tuple[bytes, str, str]]) -> list[str]:
@@ -82,17 +86,16 @@ class ConversationRequest:
     """图片/文本生成协议层的统一请求模型。
 
     由 `api/` 各端点构造，贯穿 `protocol/` 内的文本流与生图流编排。
+    提示词与图片输入的**唯一事实源**是 `plan`：端点在请求路径内构造一次，
+    下游只渲染，不再按字段各自拼装。
     """
 
     model: str = "auto"
+    # 调用方原始提示词：图片链路用于会话恢复检索（`_recover_conversation_id`）
+    # 与 codex 链路的 `input`，不承载任何注入结果。
     prompt: str = ""
-    # 实际发往上游的文本（已拼入 global system 与尺寸/质量提示），由端点从
-    # `plan.prompt` 写入。`revised_prompt` 用它反映真实发送内容；会话恢复检索
-    # （`_recover_conversation_id`）仍用原始 `prompt`，避免 global 前缀稀释关键词匹配。
-    final_prompt: str = ""
     messages: list[dict[str, Any]] | None = None
     thinking_effort: str = ""
-    images: list[str] | None = None
     n: int = 1
     size: str | None = None
     quality: str = "auto"
@@ -103,18 +106,6 @@ class ConversationRequest:
     base_url: str | None = None
     message_as_error: bool = False
     progress_callback: Any = None  # Callable[[str], None] | None
-    # 端点在请求路径内构造好的提示词事实源；下游直接渲染，不再重复拼装，
-    # 避免尺寸/质量提示被二次注入。为 None 时下游按字段自行构造（幂等）。
-    # 类型为 `services.protocol.prompt_plan.PromptPlan`；此处用字符串注解是为了
-    # 不引入运行时循环导入（`prompt_plan` 不依赖本模块，方向单向）。
-    plan: "Any" = None
-
-    def __post_init__(self) -> None:
-        """端点只传 `plan` 时，把 `plan.prompt` 回填为 `final_prompt` 的兜底值。
-
-        图片链路的实际上游文本是 `render_picture_prompt(plan)`（含 global），
-        由端点显式写入 `final_prompt`；这里只做「未显式写入时不至于为空」的兜底，
-        避免在 `message_utils` 复制 renderer 的拼接逻辑（依赖纪律不允许）。
-        """
-        if not self.final_prompt and self.plan is not None:
-            self.final_prompt = str(getattr(self.plan, "prompt", "") or "")
+    # 提示词与图片输入的事实源；端点必须显式传入，未传时由下游就地构造
+    # （`_request_plan`），二者共用同一个 `build_prompt_plan`。
+    plan: PromptPlan | None = None

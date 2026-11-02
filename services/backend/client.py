@@ -726,7 +726,10 @@ class OpenAIBackendCore:
         watchdog = threading.Timer(hard_cap_secs, response.close)
         watchdog.daemon = True
         watchdog.start()
-        timeout_message = f"图片生成流已超过硬上限 {int(hard_cap_secs)} 秒，已强制中断（上游可能未生成图片）"
+        timeout_message = (
+            f"upstream image stream exceeded the hard cap of {int(hard_cap_secs)}s; "
+            "upstream may not have generated an image"
+        )
         try:
             for payload in iter_sse_payloads(response):
                 yield payload

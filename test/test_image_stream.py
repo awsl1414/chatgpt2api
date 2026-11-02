@@ -94,6 +94,9 @@ class FakeBackend:
         self.poll_calls.append((conversation_id, list(file_ids), list(sediment_ids)))
         return [], []
 
+    def close(self) -> None:
+        """`_generate_single_image` 在 finally 中关闭 backend。"""
+
 
 # ---- 文本回复判定 ----
 
@@ -224,7 +227,7 @@ def test_stream_image_outputs_success_with_sse_file_ids(monkeypatch):
     assert "receiving_image" in progress_steps
 
 
-def test_stream_image_outputs_revised_prompt_uses_final_prompt(monkeypatch):
+def test_stream_image_outputs_revised_prompt_matches_upstream_text(monkeypatch):
     """`revised_prompt` 反映实际发往上游的文本（含尺寸/质量与 global），而非原始输入。"""
     backend = FakeBackend(urls=["https://cdn/a.png"])
     events = [
@@ -241,14 +244,11 @@ def test_stream_image_outputs_revised_prompt_uses_final_prompt(monkeypatch):
     plan = build_prompt_plan(
         model="gpt-image-2", prompt="a cat", size="1792x1024", quality="high", size_enabled=True,
     )
-    final_prompt = render_picture_prompt(plan)
-    request = make_request(
-        size="1792x1024", quality="high", size_enabled=True, plan=plan, final_prompt=final_prompt,
-    )
+    request = make_request(size="1792x1024", quality="high", size_enabled=True, plan=plan)
     outputs = list(stream_image_outputs(backend, request))
 
     revised = outputs[-1].data[0]["revised_prompt"]
-    assert revised == final_prompt
+    assert revised == render_picture_prompt(plan)
     assert "GLOBAL" in revised
     assert "输出图片尺寸为 1792x1024。" in revised
     assert "输出图片质量为 high。" in revised
@@ -256,21 +256,31 @@ def test_stream_image_outputs_revised_prompt_uses_final_prompt(monkeypatch):
     assert request.prompt == "a cat"
 
 
-def test_stream_codex_image_outputs_revised_prompt_uses_final_prompt():
-    """codex 链路的 `revised_prompt` 取实际发送文本。
+def test_stream_codex_image_outputs_revised_prompt_matches_upstream_input(monkeypatch):
+    """codex 链路的 `revised_prompt` 必须等于上游实际收到的 `input` 文本。
 
-    codex 的 global system 走 `instructions` 而非 prompt，因此这里的
-    `revised_prompt` 不含 global（与上游实际收到的 `input` 文本一致）。
+    codex 的 global system 走 `instructions`，`input` 只承载 `plan.prompt`；
+    这里断言 `revised_prompt` 与真正发往上游的 input 全等，且不含 global。
     """
+    monkeypatch.setattr(
+        image_stream_module.config, "data",
+        {**image_stream_module.config.data, "global_system_prompt": "GLOBAL_SYS"},
+    )
+    captured: dict = {}
+
     class CodexBackend:
         def iter_codex_image_response_events(self, **kwargs):
+            captured.update(kwargs)
             yield {"type": "image_generation_call", "result": PNG_B64}
 
     plan = build_prompt_plan(model="codex-gpt-image-2", prompt="a cat")
     request = make_request(model="codex-gpt-image-2", plan=plan)
     outputs = list(stream_codex_image_outputs(CodexBackend(), request))
 
-    assert outputs[0].data[0]["revised_prompt"] == plan.prompt == "a cat"
+    assert captured["instructions"].startswith("GLOBAL_SYS")
+    assert captured["prompt"] == "a cat"
+    assert outputs[0].data[0]["revised_prompt"] == captured["prompt"] == "a cat"
+    assert "GLOBAL_SYS" not in outputs[0].data[0]["revised_prompt"]
     assert request.prompt == "a cat"
 
 
@@ -436,3 +446,36 @@ def test_save_image_bytes_requires_injected_saver():
             save_image_bytes(b"abc", None)
     finally:
         image_stream_module._image_saver = original
+
+
+# ---- 硬上限超时映射 ----
+
+
+def test_hard_timeout_is_mapped_to_stable_upstream_error(monkeypatch):
+    """`ImageStreamHardTimeoutError` 不被泛化分支吞掉，映射为 502 upstream_stream_timeout。"""
+    from services.errors import ImageStreamHardTimeoutError
+
+    monkeypatch.setattr(image_stream_module, "_acquire_image_token", lambda request, account_email: "token")
+    monkeypatch.setattr(image_stream_module, "_lookup_account_email", lambda token, index: "")
+    monkeypatch.setattr(image_stream_module.account_service, "mark_image_result", lambda *a, **k: None)
+    monkeypatch.setattr(image_stream_module, "OpenAIBackendAPI", lambda **kwargs: FakeBackend())
+
+    def boom(*_args, **_kwargs):
+        raise ImageStreamHardTimeoutError("upstream image stream exceeded the hard cap")
+
+    monkeypatch.setattr(image_stream_module, "_run_image_stream", boom)
+    retried: list = []
+    monkeypatch.setattr(
+        image_stream_module, "_decide_transport_retry",
+        lambda *a, **k: retried.append(a) or (True, "token", "err"),
+    )
+
+    with pytest.raises(ImageGenerationError) as exc_info:
+        list(image_stream_module._generate_single_image(make_request(), 1, 1))
+
+    error = exc_info.value
+    assert error.status_code == 502
+    assert error.code == "upstream_stream_timeout"
+    assert "硬上限" not in str(error)
+    # 确定性超时不走传输层重试
+    assert retried == []

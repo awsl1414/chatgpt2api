@@ -19,8 +19,8 @@ import pytest
 from curl_cffi import requests as curl_requests
 
 import services.backend.image_task as image_task_module
+from services.protocol.message_content import check_task_error
 from services.backend.image_task import (
-    check_task_error,
     download_image_bytes,
     extract_image_reference_ids,
     extract_image_tool_records,
