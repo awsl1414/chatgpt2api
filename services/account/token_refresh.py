@@ -26,6 +26,7 @@ from services.openai_oauth import platform_oauth_client_id, user_agent
 from services.proxy_service import proxy_settings
 from utils.helper import anonymize_token
 from utils.jwt import token_needs_refresh, token_issued_at
+from utils.limits import DEFAULT_REQUEST_TIMEOUT_SECS
 
 # 批量刷新的远端校验回调：fetch_remote_info(token, event, defer_invalid_removal) -> dict | None
 VerifyCallback = Callable[..., dict | None]
