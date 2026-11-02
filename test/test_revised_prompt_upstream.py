@@ -123,7 +123,9 @@ def test_generations_codex_upstream_input_equals_revised_prompt(
     upstream_input = captured["payload"]["input"][0]["content"][0]["text"]
     assert upstream_input == render_codex_input_prompt(request.plan)
     assert upstream_input.startswith("a cat")
-    assert "输出图片尺寸为 1792x1024。" in upstream_input
+    assert "输出图片尺寸为 1792x1024，横版。" in upstream_input
+    # codex 工具层忽略 size，payload 里不应再出现该字段
+    assert "size" not in captured["payload"]["tools"][0]
     assert captured["payload"]["instructions"] == render_codex_instructions(request.plan)
     assert captured["payload"]["instructions"].startswith(GLOBAL_SYS)
     assert outputs[0].data[0]["revised_prompt"] == upstream_input
