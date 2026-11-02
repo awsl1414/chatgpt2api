@@ -87,7 +87,7 @@ export function AccountEditDialog({ account, isUpdating, onClose, onSubmit }: Ac
               <Input
                 value={editProxy}
                 onChange={(event) => setEditProxy(event.target.value)}
-                placeholder="留空走全局代理，例如 http://127.0.0.1:7890"
+                placeholder="留空则按 稳定代理运行时 > 直连 回退，例如 http://127.0.0.1:7890"
                 className="h-11 rounded-xl border-stone-200 bg-white"
               />
               <Button

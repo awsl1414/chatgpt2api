@@ -133,14 +133,15 @@ environment:
 
 - 兼容 `POST /v1/images/generations` 图片生成接口
 - 兼容 `POST /v1/images/edits` 图片编辑接口
-- 图片输入默认支持远程 `image_url` 拉取；面向公网部署时可在 `config.json` 设 `"allow_remote_image_fetch": false` 关闭（收敛 SSRF 暴露面），关闭后仅接受 base64/data 形式图片输入
+- 图片输入默认支持远程 `image_url` 拉取；面向公网部署时可在 `config.json` 设 `"allow_remote_image_fetch": false` 关闭（收敛 SSRF 暴露面），关闭后仅接受 base64/data/上传文件形式的图片输入（对话类图片输入与 `/v1/images/edits` 的远程引用同一开关控制）
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
 - 兼容 Anthropic Messages 协议 `POST /v1/messages`
 - 兼容网页搜索 `POST /v1/search`
-- 支持 `POST /v1/ppt/generations`、`POST /v1/psd/generations` 异步生成可编辑文件，`GET /v1/editable-file-tasks` 查询任务状态
-- `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、
-  `gpt-5-mini`
+- 支持 `POST /v1/ppt/generations`、`POST /v1/psd/generations` 异步生成可编辑文件，`GET /v1/editable-file-tasks` 查询任务状态，产物经 `GET /files/{file_path}` 下载
+- `GET /v1/models` 返回上游模型目录的并集：有网页生图账号时追加 `gpt-image-2`，有 Codex Plus/Team/Pro 账号时追加
+  `codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst` 及 plus-/team-/pro- 前缀变体；
+  文本模型（`auto`、`gpt-5*` 等）是否出现取决于上游目录与账号类型
 - 支持通过 `n` 返回多张生成结果
 - 支持生成可编辑 PPT 文件
 - 支持生成可编辑 PSD 文件
@@ -150,7 +151,7 @@ environment:
 ### 在线画图功能
 
 - 内置在线画图工作台，支持生成、图片编辑与多图组图编辑
-- 支持 `gpt-image-2`、`codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini` 模型选择
+- 图片页模型选择器展示 `GET /v1/models` 中 id 含 image 的项：`gpt-image-2`、`codex-gpt-image-*` 及其 plus-/team-/pro- 前缀变体（文本模型不会出现在图片页）
 - 编辑模式支持参考图上传
 - 前端支持多图生成交互
 - 本地保存图片会话历史，支持回看、删除和清空
@@ -335,7 +336,7 @@ curl http://localhost:8000/v1/chat/completions \
 | `model`              | 文本、搜索或图片模型；搜索模型会触发网页搜索兼容逻辑                                                   |
 | `messages`           | 消息数组，支持文本、搜索和图片请求内容                                                          |
 | `n`                  | 图片生成数量，按当前实现解析为图片数量                                                          |
-| `stream`             | 文本、搜索和图片场景均支持，仍在测试                                                           |
+| `stream`             | 文本、搜索和图片场景均支持；`stream=true` 返回 SSE 流                                                       |
 | `tools`              | 文本场景支持 `web_search` / `web_search_preview` / `web_search_preview_2025_03_11` |
 | `web_search_options` | 传入时会触发网页搜索兼容逻辑                                                               |
 
@@ -373,7 +374,7 @@ curl http://localhost:8000/v1/responses \
 | `model`  | 响应中会回显该模型字段，搜索和图片生成会走对应兼容逻辑                                                             |
 | `input`  | 输入内容；搜索使用最后一条用户文本，图片生成需能解析出提示词                                                          |
 | `tools`  | 支持 `image_generation`、`web_search`、`web_search_preview`、`web_search_preview_2025_03_11` |
-| `stream` | 已实现，但仍在测试                                                                               |
+| `stream` | 已实现：`stream=true` 返回 Responses 事件格式的 SSE 流                                            |
 
 <br>
 </details>

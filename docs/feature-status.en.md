@@ -8,7 +8,7 @@
 | OpenAI 兼容 `POST /v1/images/edits` | ✅  | 已支持，可上传图片进行编辑。 |
 | 面向图片工作流的 `POST /v1/chat/completions` | ✅  | 已支持图片相关请求。 |
 | 面向图片工作流的 `POST /v1/responses` | ✅  | 已支持图片生成工具调用。 |
-| `GET /v1/models` 接口 | ✅  | 当前返回 `gpt-image-2`、`codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、`gpt-5-mini`（Codex 图像模型按账号类型动态广播）。 |
+| `GET /v1/models` 接口 | ✅  | 返回上游模型目录并集；有网页生图账号时追加 `gpt-image-2`，有 Codex Plus/Team/Pro 账号时追加 `codex-gpt-image-2`、`codex-gpt-image-2.5-flare`、`codex-gpt-image-2.5-sunburst` 及前缀变体；文本模型是否出现取决于上游目录与账号类型。 |
 | 同时生成多张图片 | ✅  | 已支持，后端与前端都可进行多图生成。 |
 | 图片并行生成 | ✅  | 多张图片使用独立线程和账号同时生成，可通过 `image_parallel_generation` 配置关闭。 |
 | 图片生成进度追踪 | ✅  | 任务显示当前步骤（上传/预热/获取token/生成中等），支持耗时统计。 |
@@ -34,11 +34,10 @@
 | 兼容接口中的多参考图能力 | ✅  | 已实现，支持在兼容接口中传入多参考图。 |
 | 更高级的 Token 调度策略 | ⚠️ | 当前已有基础轮询与限流刷新机制，更复杂的调度策略仍在完善中。 |
 | Render / Vercel 等部署表述 | ⚠️ | 当前主要以 Docker 部署为主，其他平台部署方式暂未重点说明。 |
-| `/v1/complete` 文本补全与流式输出 | ✅  | 已实现。 |
-| 流式输出支持 | ✅  | 已实现。 |
-| 文本补全缓存与重复请求合并 | ✅  | `/v1/chat/completions` 文本链路默认启用 60 秒短缓存、流式结果回放、in-flight 请求合并和相邻重复消息清理；可通过 `chat_completion_cache` 配置关闭或调整。 |
+| 流式输出支持 | ✅  | 已实现：`/v1/chat/completions`、`/v1/responses`、`/v1/messages` 与图片接口均支持 `stream=true`。 |
+| 文本补全缓存与重复请求合并 | ✅  | `/v1/chat/completions` 与 `/v1/responses` 文本链路默认启用 60 秒短缓存、流式结果回放、in-flight 请求合并和相邻重复消息清理；可通过 `chat_completion_cache` 配置关闭或调整。 |
 | 图片尺寸参数 | ✅  | `/v1/images/generations` 请求支持 `size` 字段，按模型尺寸门控校验。 |
 | 服务端图片 URL 缓存 | ✅  | 已实现。 |
 | `rt_token` 刷新 | ❌  | 待实现。 |
 | 代理配置功能 | ✅  | 通过 `proxy_runtime` 统一管理出站代理（网页端可配置），支持 WARP / FlareSolverr / Cloudflare 过墙方案；旧的全局 `proxy` 配置链已移除。 |
-| Anthropic 协议支持 | ✅  | 已实现 `POST /v1/messages`，兼容 `x-api-key` 认证与 Anthropic SSE 流式事件。 |
+| Anthropic 协议支持 | ✅  | 已实现 `POST /v1/messages`（仅文本对话），兼容 `x-api-key` 认证与 Anthropic SSE 流式事件；图片模型请求返回 400。 |

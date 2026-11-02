@@ -11,7 +11,7 @@
 | `auth-key` | string | — | ✅ | API 访问密钥；留空启动会报错。可被环境变量 `CHATGPT2API_AUTH_KEY` 覆盖 |
 | `refresh_account_interval_minute` | int | `5` | — | 账号池后台刷新轮询间隔（分钟），最小 1 |
 | `image_retention_days` | int | `30` | — | 本地图片保留天数，超期自动清理 |
-| `allow_remote_image_fetch` | bool | `true` | — | 是否允许服务端拉取请求中的远程 `image_url`；公网部署建议 `false`（收敛 SSRF 暴露面），关闭后仅接受 base64/data 形式图片输入 |
+| `allow_remote_image_fetch` | bool | `true` | — | 是否允许服务端拉取请求中的远程 `image_url`（对话类图片输入与 `/v1/images/edits` 均受控）；公网部署建议 `false`（收敛 SSRF 暴露面），关闭后仅接受 base64 / data URL / 上传文件 |
 | `image_poll_timeout_secs` | int | `120` | — | 单次生图任务上游轮询总超时（秒） |
 | `image_poll_interval_secs` | number | `10` | — | 生图任务轮询间隔（秒），仅后端调优，设置页不展示 |
 | `image_poll_initial_wait_secs` | number | `10` | — | 首次轮询前的等待秒数（上游生成约需 30s，立即轮询会浪费请求并触发瞬态 429） |
@@ -25,12 +25,12 @@
 | `auto_remove_rate_limited_accounts` | bool | `false` | — | 账号触发限流后是否自动移出账号池 |
 | `auto_remove_invalid_accounts` | bool | `false` | — | 账号失效后是否自动移出账号池 |
 | `auto_relogin_after_refresh` | bool | `false` | — | 刷新 token 失败后是否自动尝试密码重登 |
-| `log_levels` | string[] | `[]`（全部输出） | — | 启用的日志级别，可选 `debug`/`info`/`warning`/`error` |
+| `log_levels` | string[] | `[]` | — | 启用的日志级别，可选 `debug`/`info`/`warning`/`error`；为空时输出 info/warning/error（**不含 debug**） |
 | `base_url` | string | `""` | — | 对外服务的基础 URL；可被环境变量 `CHATGPT2API_BASE_URL` 覆盖 |
 | `sensitive_words` | string[] | `[]` | — | 敏感词列表，命中后触发内容过滤 |
 | `global_system_prompt` | string | `""` | — | 全局附加指令：文本请求合并进首条 system 消息，生图请求拼进提示词，Codex 请求拼进 instructions |
 | `default_upstream_model_name` | string | `"gpt-6-thinking"` | — | 客户端未指定模型时使用的上游模型 |
-| `default_thinking_effort` | string | `"auto"` | — | 默认思考力度，可选 `auto`/`standard`/`extended`/`max` |
+| `default_thinking_effort` | string | `"auto"` | — | 默认思考力度，可选 `auto`/`standard`/`extended`/`max`；模型名以 `-standard`/`-extended`/`-max` 结尾时的后缀优先仅适用于图片请求，文本请求按该值直接透传 |
 
 ## `proxy_runtime` — 稳定代理运行时
 
